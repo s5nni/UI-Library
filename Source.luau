@@ -764,7 +764,7 @@ function Library:AddWindow(options)
 		Sound:Play()
 
 		tween(Window.Frame, 0.25, { Size = bool == false and Window.Frame.Size - UDim2.new(0, 10, 0, 10) or Window.Frame.Size + UDim2.new(0, 10, 0, 10), Position = bool == false and Window.Frame.Position + UDim2.new(0, 5, 0, 5) or Window.Frame.Position - UDim2.new(0, 5, 0, 5), GroupTransparency = bool == true and 0 or 1})
-		tween(Window.Frame.Stroke, 0.25, { Transparency = bool == true and 0.8 or 1})
+		-- tween(Window.Frame.Stroke, 0.25, { Transparency = bool == true and 0.8 or 1})
 	end	
 
 	RS.Heartbeat:Connect(function()
