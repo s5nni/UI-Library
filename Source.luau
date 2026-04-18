@@ -5032,7 +5032,7 @@ function Library:Auth(options)
 				Size = UDim2.new(0.5, 0, 1, 0),
 				Position = UDim2.new(0.5, 0, 0, 0),
 				ScaleType = Enum.ScaleType.Crop,
-				Image = options.Icon and string.find(options.Icon, "rbxassetid") == true and options.Icon or options.Icon and string.find(options.Icon, "rbxassetid") == false and "rbxassetid://"..options.Icon or "rbxassetid://0",
+				Image = options.Icon or "rbxassetid://0",
 			}),
 			SelfModules.UI.Create("Frame", {
 				Name = "PositionHandler",
