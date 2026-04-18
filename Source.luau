@@ -541,6 +541,16 @@ function Library:AddWindow(options)
 			ZIndex = 3,
 			Visible = true,
 
+			SelfModules.UI.Create("ImageLabel", {
+				Name = "Konata",
+				Image = "rbxassetid://83694274760273",
+				ScaleType = Enum.ScaleType.Crop,
+				Size = UDim2.new(0, 318, 0, 144),
+				Position = UDim2.new(0.553, 0, -1.325, 0),
+				BackgroundTransparency = 1,
+				Visible = false,
+			}),
+
 			SelfModules.UI.Create("Frame", {
 				Name = "Filling",
 				BackgroundColor3 = Library.Theme.TopbarColor,
