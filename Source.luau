@@ -37,7 +37,7 @@ local TS = game:GetService("TweenService")
 local TXS = game:GetService("TextService")
 local HS = game:GetService("HttpService")
 local MPS = game:GetService("MarketplaceService")
-local VG = Players.LocalPlayer:WaitForChild("PlayerGui")
+local VG = game:GetService("CoreGui")
 
 -- Info
 
@@ -82,9 +82,9 @@ local function tween(...)
 end
 
 local ScreenGui = SelfModules.UI.Create("ScreenGui", {
-	Name = "Vynixius UI Library",
+	Name = "Mitixiu UI Library",
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-	DisplayOrder = 999,
+	DisplayOrder = 0,
 	ResetOnSpawn = false,
 })
 
