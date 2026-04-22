@@ -1,2 +1,2 @@
 local arguments = ...
-print(arguments)
+print("Args:", arguments)
