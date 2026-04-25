@@ -37,7 +37,7 @@ local TS = game:GetService("TweenService")
 local TXS = game:GetService("TextService")
 local HS = game:GetService("HttpService")
 local MPS = game:GetService("MarketplaceService")
-local VG = game:GetService("CoreGui")
+local VG = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 -- Info
 
@@ -49,7 +49,7 @@ local HardwareId = "Unknown"
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
-local SelfModules = {UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/s5nni/UI-Library/refs/heads/main/UI.luau"))()}
+local SelfModules = {UI = require(script.Parent:FindFirstChild("UI.lua"))}
 local Storage = { Connections = {ForAuth = {}}, Tween = { Cosmetic = {} } }
 
 local ListenForInput = false
@@ -388,7 +388,7 @@ function Library:Notify(options, callback)
 				Position = UDim2.new(0, -13, 0, -13),
 				Size = UDim2.new(1, 26, 1, 26),
 				Image = "rbxassetid://10822615828",
-				ImageColor3 = options.color,
+				ImageColor3 = Library.Theme.Accent,
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = Rect.new(99, 99, 99, 99),
 				ImageTransparency = 0.9,
@@ -501,6 +501,7 @@ function Library:AddWindow(options)
 		Tabs = {},
 		Sidebar = { List = {}, Toggled = false },
 		Key = options.key or Enum.KeyCode.RightControl,
+		ExtraKey = options.extrakey or Enum.KeyCode.LeftAlt,
 		fullscreenKey = options.fullscreenKey or Enum.KeyCode.RightAlt,
 		Toggled = options.default ~= false,
 		Acrylic = nil,
@@ -540,7 +541,7 @@ function Library:AddWindow(options)
 			Size = UDim2.new(1, 0, 0, 40),
 			ZIndex = 3,
 			Visible = true,
-
+			
 			SelfModules.UI.Create("ImageLabel", {
 				Name = "Konata",
 				Image = "rbxassetid://83694274760273",
@@ -763,22 +764,6 @@ function Library:AddWindow(options)
 	}, UDim.new(0, 5))
 
 	-- Window Toggle Function
-	function Window:Toggle(bool)
-		self.Toggled = bool
-
-		local Sound = Instance.new("Sound", game:GetService("SoundService"))
-		Sound.PlayOnRemove = true
-		Sound.PlaybackSpeed = bool == true and 1.5 or 0.75
-		Sound.Volume = 1
-		Sound.SoundId = "rbxassetid://".."89087762338808"
-		Sound:Play()
-
-		tween(Window.Frame, 0.25, { Size = bool == false and Window.Frame.Size - UDim2.new(0, 10, 0, 10) or Window.Frame.Size + UDim2.new(0, 10, 0, 10), Position = bool == false and Window.Frame.Position + UDim2.new(0, 5, 0, 5) or Window.Frame.Position - UDim2.new(0, 5, 0, 5), GroupTransparency = bool == true and 0 or 1})
-
-		if Window.Frame.Stroke ~= nil then
-			tween(Window.Frame.Stroke, 0.25, { Transparency = bool == true and 0.8 or 1})
-		end
-	end	
 
 	RS.Heartbeat:Connect(function()
 		Window.Frame.Visible = Window.Frame.GroupTransparency ~= 1
@@ -1231,7 +1216,7 @@ function Library:AddWindow(options)
 		Sound.PlaybackSpeed = 1.25
 		Sound.Volume = 1
 		Sound.SoundId = "rbxassetid://89087762338808"
-		Sound:Play()
+		Sound:Remove()
 		Window.Frame.Background.Visible = true
 		Window.Frame.Topbar.Visible = true
 		Window.Frame.Sidebar.Visible = true
@@ -1244,30 +1229,130 @@ function Library:AddWindow(options)
 	Window.Frame.Topbar.Titles.Label1.Size = UDim2.new(0, Size1.X + 5, 0, Size1.Y)
 	Window.Frame.Topbar.Titles.Label2.Size = UDim2.new(0, Size2.X + 10, 0, Size2.Y + 5)
 
-	Window.Key = options.key or Window.Key
-	Window.FullscreenKey = options.fullscreenKey
+	Window.Key = options.key or options.Key or Window.Key
+	Window.FullscreenKey = options.fullscreenKey or options.FullscreenKey
+
 	Window.Fullscreen = false
-	Window.OriginalSize = Window.Frame.Size
-	Window.OriginalPosition = Window.Frame.Position
+	Window.Toggled = true
+
+	-- Base constants
+	Window.BaseSize = UDim2.new(0, 460, 0, 497)
+	Window.FullscreenSize = UDim2.new(1, -12, 1, -12)
+	Window.FullscreenPosition = UDim2.new(0, 6, 0, 6)
+
+	-- These always store the SHOWN windowed state
+	Window.WindowedSize = Window.BaseSize
+	Window.WindowedPosition = Window.Frame.Position
+
+	function Window:Toggle(bool)
+		if self.Toggled == bool then return end
+		self.Toggled = bool
+
+		local Sound = Instance.new("Sound")
+		Sound.Parent = game:GetService("SoundService")
+		Sound.PlayOnRemove = true
+		Sound.PlaybackSpeed = bool and 1.5 or 0.75
+		Sound.Volume = 1
+		Sound.SoundId = "rbxassetid://89087762338808"
+		Sound:Destroy()
+
+		local targetSize, targetPos
+
+		if self.Fullscreen then
+			-- In fullscreen mode: shrink/expand relative to fullscreen bounds
+			if bool then
+				targetSize = self.FullscreenSize
+				targetPos = self.FullscreenPosition
+			else
+				targetSize = self.FullscreenSize - UDim2.new(0, 10, 0, 10)
+				targetPos = self.FullscreenPosition + UDim2.new(0, 5, 0, 5)
+			end
+		else
+			-- Windowed mode: shrink/expand relative to the frame's live size/position
+			local currentSize = self.Frame.Size
+			local currentPos = self.Frame.Position
+
+			if bool then
+				targetSize = currentSize + UDim2.new(0, 10, 0, 10)
+				targetPos = currentPos - UDim2.new(0, 5, 0, 5)
+			else
+				targetSize = currentSize - UDim2.new(0, 10, 0, 10)
+				targetPos = currentPos + UDim2.new(0, 5, 0, 5)
+			end
+		end
+
+		tween(self.Frame, 0.25, {
+			Size = targetSize,
+			Position = targetPos,
+			GroupTransparency = bool and 0 or 1
+		})
+
+		local stroke = self.Frame:FindFirstChild("Stroke")
+		if stroke then
+			tween(stroke, 0.25, {
+				Transparency = bool and 0.8 or 1
+			})
+		end
+	end
 
 	function Window:SetFullscreen(bool)
 		if self.Fullscreen == bool then return end
 		self.Fullscreen = bool
 
+		local Sound = Instance.new("Sound")
+		Sound.Parent = game:GetService("SoundService")
+		Sound.PlayOnRemove = true
+		Sound.PlaybackSpeed = bool and 1.75 or 1.5
+		Sound.Volume = 1
+		Sound.SoundId = "rbxassetid://89087762338808"
+		Sound:Destroy()
+
 		local targetSize, targetPos
+
 		if bool then
-			self.OriginalSize = self.Frame.Size
-			self.OriginalPosition = self.Frame.Position
-			targetSize = UDim2.new(1, 0, 1, 0)
-			targetPos = UDim2.new(0, 0, 0, 0)
-			SelfModules.UI.UnMakeDraggable(self.Frame)
+			-- ENTER FULLSCREEN
+			-- Snapshot the SHOWN windowed state so we can restore correctly later
+			if self.Toggled then
+				self.WindowedSize = self.Frame.Size
+				self.WindowedPosition = self.Frame.Position
+			else
+				-- Currently hidden: reverse the toggle offset to get the true shown state
+				self.WindowedSize = self.Frame.Size + UDim2.new(0, 10, 0, 10)
+				self.WindowedPosition = self.Frame.Position - UDim2.new(0, 5, 0, 5)
+			end
+
+			-- If hidden, enter fullscreen in the hidden shrunken state
+			if self.Toggled then
+				targetSize = self.FullscreenSize
+				targetPos = self.FullscreenPosition
+			else
+				targetSize = self.FullscreenSize - UDim2.new(0, 10, 0, 10)
+				targetPos = self.FullscreenPosition + UDim2.new(0, 5, 0, 5)
+			end
+
+			SelfModules.UI.UnMakeDraggable(self.Frame.Topbar)
 		else
-			targetSize = self.OriginalSize
-			targetPos = self.OriginalPosition
+			-- EXIT FULLSCREEN
+			if self.Toggled then
+				targetSize = self.WindowedSize
+				targetPos = self.WindowedPosition
+			else
+				-- Return to the hidden windowed state
+				targetSize = self.WindowedSize - UDim2.new(0, 10, 0, 10)
+				targetPos = self.WindowedPosition + UDim2.new(0, 5, 0, 5)
+			end
+
 			SelfModules.UI.MakeDraggable(self.Frame, self.Frame.Topbar, 0.0975, false)
 		end
 
-		tween(self.Frame, 0.3, { Size = targetSize, Position = targetPos })
+		tween(self.Frame.Topbar.Konata, 0.3, {
+			Position = bool and UDim2.new(0.851, 0, -1.3, 0) or UDim2.new(0.553, 0, -1.325, 0)
+		})
+
+		tween(self.Frame, 0.3, {
+			Size = targetSize,
+			Position = targetPos
+		})
 	end
 
 	Storage.Connections[Window] = {}
@@ -1278,7 +1363,11 @@ function Library:AddWindow(options)
 	-- Existing toggle keybind
 	UIS.InputBegan:Connect(function(input, gameProcessed)
 		if not gameProcessed and input.KeyCode == Window.Key and not ListenForInput then
-			Window:Toggle(not Window.Toggled)
+			if UIS:IsKeyDown(Window.ExtraKey) == true then
+				Window:SetFullscreen(not Window.Fullscreen)
+			else
+				Window:Toggle(not Window.Toggled)
+			end
 		end
 	end)
 
@@ -1568,6 +1657,944 @@ function Library:AddWindow(options)
 					toggleSection(not Section.Toggled)
 				end
 			end)
+
+			-- Terminal
+			function Section:AddTerminal(name, options, callback)
+				local Terminal = {
+					Name = name,
+					Options = options or {},
+					Callback = callback,
+					CurrentLayoutOrder = 0,
+					List = {},
+				}
+
+				-- Frame
+				Terminal.Frame = SelfModules.UI.Create("Frame", {
+					Name = name,
+					BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+					Size = UDim2.new(1, 2, 0, math.clamp(Terminal.Options.extend, 55, 1000) or 280),
+
+					SelfModules.UI.Create("Frame", {
+						Name = "Holder",
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(5, 5, 5)),
+						Size = UDim2.new(1, -2, 1, -2),
+						Position = UDim2.new(0, 1, 0, 1),
+
+						SelfModules.UI.Create("TextLabel", {
+							Name = "Label",
+							BackgroundTransparency = 1,
+							Position = UDim2.new(0, 5, 0, 5),
+							Size = UDim2.new(1, -10, 0, 14),
+							Font = Enum.Font.SourceSans,
+							Text = name,
+							TextColor3 = Library.Theme.TextColor,
+							TextSize = 14,
+							TextWrapped = true,
+							TextXAlignment = Enum.TextXAlignment.Left,
+						}),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Field",
+							BackgroundColor3 = SelfModules.UI.Color.Sub(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+							Position = UDim2.new(0.5, 0, 0, 25),
+							Size = UDim2.new(1, -8, 1, -30),
+							AnchorPoint = Vector2.new(0.5, 0),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Holder",
+								BackgroundColor3 = Library.Theme.SectionColor,
+								Position = UDim2.new(0, 1, 0, 1),
+								Size = UDim2.new(1, -2, 1, -2),
+
+								SelfModules.UI.Create("Frame", {
+									Name = "List",
+									BackgroundTransparency = 1,
+									Size = UDim2.new(1, 0, 1, 0),
+									ClipsDescendants = true,
+
+									SelfModules.UI.Create("UIListLayout", {
+										FillDirection = Enum.FillDirection.Vertical,
+										SortOrder = Enum.SortOrder.LayoutOrder,
+										HorizontalAlignment = Enum.HorizontalAlignment.Left,
+										VerticalAlignment = Enum.VerticalAlignment.Top,
+									}),
+
+									SelfModules.UI.Create("UIPadding", {
+										PaddingLeft = UDim.new(0, 4),
+										PaddingRight = UDim.new(0, 4),
+										PaddingTop = UDim.new(0, 2),
+										PaddingBottom = UDim.new(0, 2),
+									}),
+								}),
+							}, UDim.new(0, 5)),
+						}, UDim.new(0, 5)),
+					}, UDim.new(0, 5)),
+				}, UDim.new(0, 5))
+
+				-- References
+				local List = Terminal.Frame.Holder.Field.Holder.List
+				local Layout = List.UIListLayout
+
+				-- Colors
+				local MessageColors = {
+					Print = Color3.fromRGB(255, 255, 255),
+					Warn = Color3.fromRGB(255, 170, 0),
+					Feed = Color3.fromRGB(125, 180, 255),
+					Error = Color3.fromRGB(255, 80, 80),
+					Success = Color3.fromRGB(85, 255, 0),
+					Info = Color3.fromRGB(120, 200, 255),
+					Debug = Color3.fromRGB(170, 170, 170),
+					System = Color3.fromRGB(180, 140, 255),
+					Command = Color3.fromRGB(255, 255, 120),
+					Input = Color3.fromRGB(255, 220, 180),
+					Output = Color3.fromRGB(180, 255, 255),
+					Critical = Color3.fromRGB(255, 40, 40),
+					Trace = Color3.fromRGB(120, 120, 120),
+					Network = Color3.fromRGB(100, 180, 255),
+					Security = Color3.fromRGB(255, 80, 180),
+					Memory = Color3.fromRGB(255, 120, 120),
+					File = Color3.fromRGB(200, 255, 150),
+					Event = Color3.fromRGB(255, 180, 255),
+					Loading = Color3.fromRGB(255, 220, 100),
+					Hidden = Color3.fromRGB(90, 90, 90),
+				}
+
+				-- Callback Helper
+				local function fireCallback(state, object)
+					if Terminal.Callback then
+						task.spawn(function()
+							Terminal.Callback(state, object)
+						end)
+					end
+				end
+
+				-- Bounds Check
+				local function isOutOfBounds(guiObject)
+					local objectBottom = guiObject.AbsolutePosition.Y + guiObject.AbsoluteSize.Y
+					local containerBottom = List.AbsolutePosition.Y + List.AbsoluteSize.Y
+
+					return objectBottom > containerBottom
+				end
+
+				-- Remove Oldest
+				local function removeOldest()
+					local labels = {}
+
+					for _, child in ipairs(List:GetChildren()) do
+						if child:IsA("TextLabel") or child:IsA("TextBox") then
+							table.insert(labels, child)
+						end
+					end
+
+					if #labels == 0 then
+						return
+					end
+
+					table.sort(labels, function(a, b)
+						return a.LayoutOrder < b.LayoutOrder
+					end)
+
+					local oldest = labels[1]
+
+					fireCallback("Remove", oldest)
+					oldest:Destroy()
+				end
+
+				-- Overflow Check
+				local function checkOverflow()
+					for _, child in ipairs(List:GetChildren()) do
+						if (child:IsA("TextLabel") or child:IsA("TextBox")) and isOutOfBounds(child) then
+							removeOldest()
+							task.defer(checkOverflow)
+							break
+						end
+					end
+				end
+
+				-- Public Functions
+
+				function Terminal:Add(text, config)
+					config = config or {}
+					
+					local Sound = Instance.new("Sound")
+					Sound.SoundId = "rbxassetid://140207837688369"
+					Sound.Volume = 0.01
+					Sound.PlaybackSpeed = 1
+					Sound.PlayOnRemove = true
+					Sound.Parent = game:GetService("SoundService")
+					Sound:Remove()
+
+					Terminal.CurrentLayoutOrder += 1
+
+					local messageType = config.type or "Print"
+					local selectable = config.Selectable or false
+					local wrapped = config.Wrapped or false
+					local sizeY = config.SizeY or 14
+
+					local baseProperties = {
+						Name = "Label",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(1, -2, 0, sizeY),
+						AutomaticSize = wrapped and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
+						Font = Enum.Font.SourceSans,
+						Text = tostring(text),
+						TextSize = 14,
+						TextWrapped = wrapped,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top,
+						TextColor3 = MessageColors[messageType] or MessageColors.Print,
+						LayoutOrder = Terminal.CurrentLayoutOrder,
+					}
+
+					local Object
+
+					if selectable then
+						Object = SelfModules.UI.Create("TextBox", {
+							Name = baseProperties.Name,
+							BackgroundTransparency = baseProperties.BackgroundTransparency,
+							Size = baseProperties.Size,
+							AutomaticSize = baseProperties.AutomaticSize,
+							Font = baseProperties.Font,
+							Text = baseProperties.Text,
+							TextSize = baseProperties.TextSize,
+							TextWrapped = baseProperties.TextWrapped,
+							TextXAlignment = baseProperties.TextXAlignment,
+							TextYAlignment = baseProperties.TextYAlignment,
+							TextColor3 = baseProperties.TextColor3,
+							LayoutOrder = baseProperties.LayoutOrder,
+
+							ClearTextOnFocus = false,
+							MultiLine = wrapped,
+							TextEditable = false,
+							Selectable = true,
+							Active = true,
+						})
+
+						local ClickDetector = SelfModules.UI.Create("TextButton", {
+							Name = "Detector",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, 0, 1, 0),
+							Text = "",
+							ZIndex = (Object.ZIndex or 1) + 1,
+						})
+
+						ClickDetector.Parent = Object
+
+						ClickDetector.MouseButton1Click:Connect(function()
+							Object:CaptureFocus()
+
+							task.defer(function()
+								if Object.Parent then
+									Object.CursorPosition = #Object.Text + 1
+									Object.SelectionStart = 1
+								end
+							end)
+						end)
+					else
+						Object = SelfModules.UI.Create("TextLabel", baseProperties)
+					end
+
+					Object.Parent = List
+
+					table.insert(Terminal.List, Object)
+
+					fireCallback("Add", Object)
+
+					task.defer(checkOverflow)
+
+					return Object
+				end
+
+				function Terminal:Remove(object)
+					if not object then
+						return
+					end
+
+					if object.Parent == List then
+						fireCallback("Remove", object)
+						object:Destroy()
+					end
+				end
+
+				function Terminal:Reset()
+					for _, child in ipairs(List:GetChildren()) do
+						if child:IsA("TextLabel") or child:IsA("TextBox") then
+							fireCallback("Remove", child)
+							child:Destroy()
+						end
+					end
+
+					Terminal.List = {}
+					Terminal.CurrentLayoutOrder = 0
+				end
+
+				function Terminal:GetChildren()
+					local objects = {}
+
+					for _, child in ipairs(List:GetChildren()) do
+						if child:IsA("TextLabel") or child:IsA("TextBox") then
+							table.insert(objects, child)
+						end
+					end
+
+					return objects
+				end
+
+				function Terminal:GetCount()
+					local count = 0
+
+					for _, child in ipairs(List:GetChildren()) do
+						if child:IsA("TextLabel") or child:IsA("TextBox") then
+							count += 1
+						end
+					end
+
+					return count
+				end
+
+				Section.List[#Section.List + 1] = Terminal
+				Terminal.Frame.Parent = Section.Frame.List
+
+				return Terminal
+			end
+			
+			-- Graph
+			function Section:AddGraph(name, options, callback)
+				local Graph = {
+					Name = name,
+					Type = "Graph",
+					Options = options,
+					Callback = callback,
+				}
+				
+				-- Frame
+				Graph.Frame = SelfModules.UI.Create("Frame", {
+					Name = name,
+					BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+					Size = UDim2.new(1, 2, 0, math.clamp(Graph.Options.extend, 55, 1000) or 280),
+
+					SelfModules.UI.Create("Frame", {
+						Name = "Holder",
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(5, 5, 5)),
+						Size = UDim2.new(1, -2, 1, -2),
+						Position = UDim2.new(0, 1, 0, 1),
+
+						SelfModules.UI.Create("TextLabel", {
+							Name = "Label",
+							BackgroundTransparency = 1,
+							Position = UDim2.new(0, 5, 0, 5),
+							Size = UDim2.new(1, -10, 0, 14),
+							Font = Enum.Font.SourceSans,
+							Text = name,
+							TextColor3 = Library.Theme.TextColor,
+							TextSize = 14,
+							TextWrapped = true,
+							TextXAlignment = Enum.TextXAlignment.Left,
+						}),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Field",
+							BackgroundColor3 = SelfModules.UI.Color.Sub(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+							Position = UDim2.new(0.5, 0, 0, 25),
+							Size = UDim2.new(1, -8, 1, -30),
+							AnchorPoint = Vector2.new(0.5, 0),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Holder",
+								BackgroundColor3 = Library.Theme.SectionColor,
+								Position = UDim2.new(0, 1, 0, 1),
+								Size = UDim2.new(1, -2, 1, -2),
+
+								SelfModules.UI.Create("Frame", {
+									Name = "List",
+									BackgroundTransparency = 1,
+									Size = UDim2.new(1, 0, 1, 0),
+									ClipsDescendants = true,
+								}),
+							}, UDim.new(0, 5)),
+						}, UDim.new(0, 5)),
+					}, UDim.new(0, 5)),
+				}, UDim.new(0, 5))
+				
+				-- Scripts
+				local points    = {}
+				local linePool  = {}
+				local MIN       = Graph.Options.min       or 0
+				local MAX       = Graph.Options.max       or 100
+				local MAX_POINTS = Graph.Options.points   or 50
+				local THICKNESS = Graph.Options.thickness or 1.5
+
+				local List = Graph.Frame.Holder.Field.Holder.List
+
+				local function getLine(index)
+					if not linePool[index] then
+						local f = SelfModules.UI.Create("Frame", {
+							BackgroundColor3 = Library.Theme.Accent,
+							BorderSizePixel = 0,
+							Visible = false,
+							
+							SelfModules.UI.Create("ImageLabel", {
+								Name = "Glow",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, -3, 0, -3),
+								Size = UDim2.new(1, 6, 1, 6),
+								Image = "rbxassetid://10822615828",
+								ImageColor3 = SelfModules.UI.Color.Sub(Library.Theme.Accent, Color3.fromRGB(10, 10, 10)),
+								ScaleType = Enum.ScaleType.Slice,
+								SliceCenter = Rect.new(99, 99, 99, 99),
+								ImageTransparency = 0.98,
+								SliceScale = 1,
+							}),
+						})
+						f.Parent = List
+						linePool[index] = f
+					end
+					return linePool[index]
+				end
+
+				local function drawLine(frame, ax, ay, bx, by)
+					local dx = bx - ax
+					local dy = by - ay
+					local length = math.sqrt(dx * dx + dy * dy)
+					local angle  = math.deg(math.atan2(dy, dx))
+					local mx = (ax + bx) / 2
+					local my = (ay + by) / 2
+
+					frame.AnchorPoint = Vector2.new(0.5, 0.5)
+					frame.Position    = UDim2.new(0, mx, 0, my)
+					frame.Size        = UDim2.new(0, length, 0, THICKNESS)
+					frame.Rotation    = angle
+					frame.Visible     = true
+				end
+
+				local function hideUnused(from)
+					for i = from, #linePool do
+						if linePool[i] then
+							linePool[i].Visible = false
+						end
+					end
+				end
+
+				local function redraw()
+					local w     = List.AbsoluteSize.X
+					local h     = List.AbsoluteSize.Y
+					local count = #points
+
+					if count < 2 then return end
+
+					local spacing = w / (MAX_POINTS - 1)
+
+					for i = 1, count - 1 do
+						local ax = (i - 1) * spacing
+						local bx = i       * spacing
+						local ay = points[i]     * h
+						local by = points[i + 1] * h
+
+						drawLine(getLine(i), ax, ay, bx, by)
+					end
+
+					hideUnused(count)
+				end
+
+				-- Functions
+
+				-- Adds a new value to the graph
+				function Graph:Add(value)
+					local clamped    = math.clamp(value, MIN, MAX)
+					local percentage = 1 - ((clamped - MIN) / (MAX - MIN))
+
+					table.insert(points, percentage)
+					if #points > MAX_POINTS then
+						table.remove(points, 1)
+					end
+
+					if Graph.Callback then
+						-- Returning value
+						Graph.Callback(clamped)
+					end
+
+					redraw()
+				end
+				
+				-- Returns the average calculated value
+				function Graph:GetAverage()
+					if #points == 0 then return 0 end
+
+					local sum = 0
+					for _, percentage in ipairs(points) do
+						-- convert percentage back to real value
+						sum = sum + (MIN + ((1 - percentage) * (MAX - MIN)))
+					end
+
+					return sum / #points
+				end
+
+				-- Sets how many points fit across the graph (fewer = longer segments, more = shorter)
+				function Graph:Scale(value)
+					MAX_POINTS = math.clamp(math.floor(value), 2, 500)
+
+					-- Trim existing points if new scale is smaller
+					while #points > MAX_POINTS do
+						table.remove(points, 1)
+					end
+
+					redraw()
+				end
+
+				-- Changes the thickness of all lines
+				function Graph:Thickness(value)
+					THICKNESS = math.clamp(value, 0.5, 10)
+					redraw()
+				end
+
+				-- Clears all lines and resets state
+				function Graph:Clear()
+					points = {}
+
+					for _, line in ipairs(linePool) do
+						if line then
+							line:Destroy()
+						end
+					end
+
+					linePool = {}
+				end
+				
+				function Graph:SetPoints(value)
+					MAX_POINTS = math.clamp(math.floor(value), 2, 500)
+
+					while #points > MAX_POINTS do
+						table.remove(points, 1)
+					end
+
+					redraw()
+				end
+				
+				Section.List[#Section.List + 1] = Graph
+				Graph.Frame.Parent = Section.Frame.List
+				
+				return Graph
+			end
+			
+			-- Priority
+			function Section:AddPriority(name, list, options, callback)
+				local Ranker = {
+					Name     = name,
+					Type     = "Ranker",
+					Toggled  = false,
+					Order    = {},
+					Excluded = {},
+					List     = {},
+					Callback = callback,
+				}
+
+				local ITEM_HEIGHT  = 32
+				local ITEM_GAP     = 4
+				local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
+				local HAS_EXCLUDE  = options and options.exclude == true
+				local DIVIDER_KEY  = "__DIVIDER__"
+				
+				local unified      = {}
+				local frameMap     = {}
+				local dividerFrame = nil
+
+				local function slotY(i)
+					return (i - 1) * ITEM_STRIDE
+				end
+
+				local function totalListH()
+					return math.max(#unified, 1) * ITEM_STRIDE - ITEM_GAP
+				end
+
+				local function rebuildOrderExcluded()
+					Ranker.Order    = {}
+					Ranker.Excluded = {}
+					if not HAS_EXCLUDE then
+						for _, v in ipairs(unified) do
+							if v ~= DIVIDER_KEY then
+								Ranker.Order[#Ranker.Order + 1] = v
+							end
+						end
+						return
+					end
+					local pastDivider = false
+					for _, v in ipairs(unified) do
+						if v == DIVIDER_KEY then
+							pastDivider = true
+						elseif pastDivider then
+							Ranker.Excluded[#Ranker.Excluded + 1] = v
+						else
+							Ranker.Order[#Ranker.Order + 1] = v
+						end
+					end
+				end
+
+				local function refreshNumbers()
+					local activeNum = 1
+					for _, v in ipairs(unified) do
+						if v == DIVIDER_KEY then
+							activeNum = nil
+						else
+							local f = frameMap[v]
+							if f then
+								if activeNum then
+									f.Holder.Num.Text = tostring(activeNum)
+									f.Holder.Num.TextColor3 = Library.Theme.Accent
+									activeNum = activeNum + 1
+								else
+									f.Holder.Num.Text = "—"
+									f.Holder.Num.TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55))
+								end
+							end
+						end
+					end
+				end
+
+				local function refreshPositions(skipName)
+					for i, v in ipairs(unified) do
+						if v ~= skipName then
+							local f = v == DIVIDER_KEY and dividerFrame or frameMap[v]
+							if f then
+								tween(f, 0.18, { Position = UDim2.new(0, 0, 0, slotY(i)) })
+							end
+						end
+					end
+				end
+
+				Ranker.Frame = SelfModules.UI.Create("Frame", {
+					Name = "Ranker",
+					BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+					Size = UDim2.new(1, 2, 0, 42),
+					ClipsDescendants = true,
+
+					SelfModules.UI.Create("Frame", {
+						Name = "Holder",
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(5, 5, 5)),
+						Position = UDim2.new(0, 1, 0, 1),
+						Size = UDim2.new(1, -2, 1, -2),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Holder",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, 0, 0, 40),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Label",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, 5, 0, 8),
+								Size = UDim2.new(1, -35, 0, 14),
+								Font = Enum.Font.SourceSans,
+								Text = name,
+								TextColor3 = Library.Theme.TextColor,
+								TextSize = 14,
+								TextWrapped = true,
+								TextXAlignment = Enum.TextXAlignment.Left,
+							}),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Count",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0.5, 0, 0, 8),
+								Size = UDim2.new(0.5, -30, 0, 14),
+								Font = Enum.Font.SourceSans,
+								Text = "",
+								TextColor3 = SelfModules.UI.Color.Add(Library.Theme.TextColor, Color3.fromRGB(-60, -60, -60)),
+								TextSize = 12,
+								TextWrapped = true,
+								TextXAlignment = Enum.TextXAlignment.Right,
+							}),
+
+							SelfModules.UI.Create("ImageLabel", {
+								Name = "Indicator",
+								AnchorPoint = Vector2.new(1, 0),
+								BackgroundTransparency = 1,
+								Position = UDim2.new(1, -5, 0, 5),
+								Size = UDim2.new(0, 20, 0, 20),
+								Image = "rbxassetid://9243354333",
+							}),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Line",
+								BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+								BorderSizePixel = 0,
+								Position = UDim2.new(0, 5, 0, 30),
+								Size = UDim2.new(1, -10, 0, 2),
+							}),
+						}, UDim.new(0, 5)),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "List",
+							BackgroundTransparency = 1,
+							BorderSizePixel = 0,
+							Position = UDim2.new(0, 5, 0, 44),
+							Size = UDim2.new(1, -10, 0, 0),
+							ClipsDescendants = true,
+						}),
+					}, UDim.new(0, 5)),
+				}, UDim.new(0, 5))
+
+				-- Divider frame: just a slot like any other, not draggable
+				if HAS_EXCLUDE then
+					dividerFrame = SelfModules.UI.Create("Frame", {
+						Name = DIVIDER_KEY,
+						BackgroundTransparency = 1,
+						Position = UDim2.new(0, 0, 0, 0),
+						Size = UDim2.new(1, 0, 0, ITEM_HEIGHT),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "LineLeft",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(25, 25, 25)),
+							BorderSizePixel = 0,
+							AnchorPoint = Vector2.new(0, 0.5),
+							Position = UDim2.new(0, 0, 0.5, 0),
+							Size = UDim2.new(0.28, 0, 0, 1),
+						}),
+
+						SelfModules.UI.Create("TextLabel", {
+							Name = "Label",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, 0, 1, 0),
+							Font = Enum.Font.SourceSans,
+							Text = "not in use",
+							TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55)),
+							TextSize = 11,
+						}),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "LineRight",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(25, 25, 25)),
+							BorderSizePixel = 0,
+							AnchorPoint = Vector2.new(1, 0.5),
+							Position = UDim2.new(1, 0, 0.5, 0),
+							Size = UDim2.new(0.28, 0, 0, 1),
+						}),
+					})
+					dividerFrame.Parent = Ranker.Frame.Holder.List
+					unified[1] = DIVIDER_KEY -- divider starts at top, items added below it
+				end
+
+				-- Height
+				function Ranker:GetHeight()
+					if not Ranker.Toggled then return 42 end
+					return 42 + totalListH() + 8
+				end
+
+				function Ranker:UpdateHeight()
+					Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
+					Ranker.Frame.Holder.Holder.Count.Text = #Ranker.List > 0 and (#Ranker.List .. " items") or ""
+					if Ranker.Toggled then
+						Ranker.Frame.Size = UDim2.new(1, 2, 0, Ranker:GetHeight())
+						Section:UpdateHeight()
+					end
+				end
+
+				function Ranker:Toggle(bool)
+					Ranker.Toggled = bool
+					Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
+					tween(Ranker.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Ranker:GetHeight()) })
+					tween(Ranker.Frame.Holder.Holder.Indicator, 0.5, { Rotation = bool and 90 or 0 })
+					tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
+					tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+				end
+
+				-- Drag state
+				local dragging    = nil
+				local dragFrame   = nil
+				local dragOffsetY = 0
+
+				-- Add
+				function Ranker:Add(itemName, excluded)
+					local Item = { Name = itemName }
+
+					local insertAt
+					if HAS_EXCLUDE then
+						if excluded then
+							-- below divider at end
+							insertAt = #unified + 1
+						else
+							-- above divider
+							local di = table.find(unified, DIVIDER_KEY)
+							insertAt = di -- inserts before divider
+						end
+					else
+						insertAt = #unified + 1
+					end
+
+					local posY = slotY(insertAt)
+
+					Item.Frame = SelfModules.UI.Create("Frame", {
+						Name = itemName,
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+						Position = UDim2.new(0, 0, 0, posY),
+						Size = UDim2.new(1, 0, 0, ITEM_HEIGHT),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Holder",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(10, 10, 10)),
+							Position = UDim2.new(0, 1, 0, 1),
+							Size = UDim2.new(1, -2, 1, -2),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Num",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, 5, 0, 0),
+								Size = UDim2.new(0, 18, 1, 0),
+								Font = Enum.Font.SourceSansBold,
+								Text = "?",
+								TextColor3 = Library.Theme.Accent,
+								TextSize = 15,
+							}),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Label",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, 26, 0, 0),
+								Size = UDim2.new(1, -46, 1, 0),
+								Font = Enum.Font.SourceSans,
+								Text = itemName,
+								TextColor3 = Library.Theme.TextColor,
+								TextSize = 15,
+								TextXAlignment = Enum.TextXAlignment.Left,
+							}),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Handle",
+								AnchorPoint = Vector2.new(1, 0.5),
+								BackgroundTransparency = 1,
+								Position = UDim2.new(1, -6, 0.5, 0),
+								Size = UDim2.new(0, 16, 1, 0),
+								Font = Enum.Font.SourceSansBold,
+								Text = "::",
+								TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(60, 60, 60)),
+								TextSize = 15,
+							}),
+						}, UDim.new(0, 4)),
+					}, UDim.new(0, 4))
+
+					table.insert(unified, insertAt, itemName)
+					Ranker.List[#Ranker.List + 1] = itemName
+					frameMap[itemName] = Item.Frame
+					Item.Frame.Parent = Ranker.Frame.Holder.List
+
+					rebuildOrderExcluded()
+					refreshNumbers()
+					refreshPositions(nil)
+					Ranker:UpdateHeight()
+
+					Item.Frame.InputBegan:Connect(function(input)
+						if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+						if dragging then return end
+
+						dragging    = itemName
+						dragFrame   = Item.Frame
+						dragOffsetY = input.Position.Y - Item.Frame.AbsolutePosition.Y
+
+						tween(Item.Frame, 0.1, {
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(30, 30, 30)),
+						})
+						Item.Frame.ZIndex        = 10
+						Item.Frame.Holder.ZIndex = 10
+					end)
+
+					return Item
+				end
+
+				function Ranker:Remove(itemName, ignoreToggle)
+					local ui = table.find(unified, itemName)
+					if ui then table.remove(unified, ui) end
+					frameMap[itemName]:Destroy()
+					frameMap[itemName] = nil
+					for i, v in next, Ranker.List do
+						if v == itemName then table.remove(Ranker.List, i) break end
+					end
+					rebuildOrderExcluded()
+					refreshNumbers()
+					refreshPositions(nil)
+					if Ranker.Toggled and not ignoreToggle then Ranker:UpdateHeight() end
+					if #Ranker.List == 0 and not ignoreToggle then Ranker:Toggle(false) end
+				end
+
+				function Ranker:ClearList()
+					for _ = 1, #Ranker.List do Ranker:Remove(Ranker.List[1], true) end
+				end
+
+				function Ranker:SetList(newList)
+					Ranker:ClearList()
+					for _, v in next, newList do Ranker:Add(v) end
+				end
+
+				function Ranker:GetOrder()    return Ranker.Order    end
+				function Ranker:GetExcluded() return Ranker.Excluded end
+
+				-- Drag move
+				UIS.InputChanged:Connect(function(input)
+					if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+					if not dragging or not dragFrame then return end
+
+					local mouseY  = input.Position.Y
+					local listTop = Ranker.Frame.Holder.List.AbsolutePosition.Y
+					local localY  = mouseY - dragOffsetY - listTop
+					local clampedY = math.clamp(localY, 0, totalListH() - ITEM_HEIGHT)
+
+					dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
+
+					-- which slot is the center of the dragged frame hovering over
+					local centerY    = clampedY + ITEM_HEIGHT / 2
+					local targetSlot = math.clamp(math.round(centerY / ITEM_STRIDE) + 1, 1, #unified)
+
+					-- never allow dropping ON the divider slot, push past it
+					if HAS_EXCLUDE and unified[targetSlot] == DIVIDER_KEY then
+						local currentSlot = table.find(unified, dragging)
+						targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
+						targetSlot = math.clamp(targetSlot, 1, #unified)
+					end
+
+					local currentSlot = table.find(unified, dragging)
+					if targetSlot ~= currentSlot and currentSlot then
+						table.remove(unified, currentSlot)
+						table.insert(unified, targetSlot, dragging)
+						rebuildOrderExcluded()
+						refreshNumbers()
+						refreshPositions(dragging)
+					end
+				end)
+
+				-- Release: snap
+				UIS.InputEnded:Connect(function(input)
+					if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+					if not dragging or not dragFrame then return end
+
+					local slot  = table.find(unified, dragging)
+					local snapY = slotY(slot or 1)
+
+					tween(dragFrame, 0.2, {
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+						Position = UDim2.new(0, 0, 0, snapY),
+					})
+
+					dragFrame.ZIndex        = 1
+					dragFrame.Holder.ZIndex = 1
+					dragging  = nil
+					dragFrame = nil
+
+					pcall(task.spawn, Ranker.Callback, Ranker.Order, Ranker.Excluded)
+				end)
+
+				Ranker.Frame.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1
+						and #Ranker.List > 0
+						and Mouse.Y - Ranker.Frame.AbsolutePosition.Y <= 30 then
+						Ranker:Toggle(not Ranker.Toggled)
+					end
+				end)
+
+				Section.List[#Section.List + 1] = Ranker
+				Ranker.Frame.Parent = Section.Frame.List
+
+				for _, v in next, list do Ranker:Add(v) end
+
+				return Ranker
+			end
 
 			-- Button
 			function Section:AddButton(name, callback)
@@ -1975,9 +3002,9 @@ function Library:AddWindow(options)
 						}, UDim.new(0, 5))
 					}, UDim.new(0, 5)),
 				}, UDim.new(0, 5))
-
+				
 				local function extendBox(bool)
-					tween(Box.Frame.Holder.TextBox, 0.25, { Size = UDim2.new(0, bool and math.abs(Box.Extend) or bool and 200 or 140, 1, -4) })
+					tween(Box.Frame.Holder.TextBox, 0.25, { Size = UDim2.new(0, bool and math.clamp(math.abs(Box.Extend), 140, 386 - (Box.Frame.Holder.Label.TextBounds.X + 10)) or bool and 200 or 140, 1, -4) })
 				end
 
 				function Box:SetName(text)
@@ -3343,6 +4370,945 @@ function Library:AddWindow(options)
 				function SubSection:GetName()
 					return SubSection.Frame.Holder.Header.Text
 				end
+				
+				-- Terminal
+				function SubSection:AddTerminal(name, options, callback)
+					local Terminal = {
+						Name = name,
+						Options = options or {},
+						Callback = callback,
+						CurrentLayoutOrder = 0,
+						List = {},
+					}
+
+					-- Frame
+					Terminal.Frame = SelfModules.UI.Create("Frame", {
+						Name = name,
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+						Size = UDim2.new(1, 2, 0, math.clamp(Terminal.Options.extend, 55, 1000) or 280),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Holder",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(10, 10, 10)),
+							Size = UDim2.new(1, -2, 1, -2),
+							Position = UDim2.new(0, 1, 0, 1),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Label",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, 5, 0, 5),
+								Size = UDim2.new(1, -10, 0, 14),
+								Font = Enum.Font.SourceSans,
+								Text = name,
+								TextColor3 = Library.Theme.TextColor,
+								TextSize = 14,
+								TextWrapped = true,
+								TextXAlignment = Enum.TextXAlignment.Left,
+							}),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Field",
+								BackgroundColor3 = SelfModules.UI.Color.Sub(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+								Position = UDim2.new(0.5, 0, 0, 25),
+								Size = UDim2.new(1, -8, 1, -30),
+								AnchorPoint = Vector2.new(0.5, 0),
+
+								SelfModules.UI.Create("Frame", {
+									Name = "Holder",
+									BackgroundColor3 = Library.Theme.SectionColor,
+									Position = UDim2.new(0, 1, 0, 1),
+									Size = UDim2.new(1, -2, 1, -2),
+
+									SelfModules.UI.Create("Frame", {
+										Name = "List",
+										BackgroundTransparency = 1,
+										Size = UDim2.new(1, 0, 1, 0),
+										ClipsDescendants = true,
+
+										SelfModules.UI.Create("UIListLayout", {
+											FillDirection = Enum.FillDirection.Vertical,
+											SortOrder = Enum.SortOrder.LayoutOrder,
+											HorizontalAlignment = Enum.HorizontalAlignment.Left,
+											VerticalAlignment = Enum.VerticalAlignment.Top,
+										}),
+
+										SelfModules.UI.Create("UIPadding", {
+											PaddingLeft = UDim.new(0, 4),
+											PaddingRight = UDim.new(0, 4),
+											PaddingTop = UDim.new(0, 2),
+											PaddingBottom = UDim.new(0, 2),
+										}),
+									}),
+								}, UDim.new(0, 5)),
+							}, UDim.new(0, 5)),
+						}, UDim.new(0, 5)),
+					}, UDim.new(0, 5))
+
+					-- References
+					local List = Terminal.Frame.Holder.Field.Holder.List
+					local Layout = List.UIListLayout
+
+					-- Colors
+					local MessageColors = {
+						Print = Color3.fromRGB(255, 255, 255),
+						Warn = Color3.fromRGB(255, 170, 0),
+						Feed = Color3.fromRGB(125, 180, 255),
+						Error = Color3.fromRGB(255, 80, 80),
+						Success = Color3.fromRGB(85, 255, 0),
+						Info = Color3.fromRGB(120, 200, 255),
+						Debug = Color3.fromRGB(170, 170, 170),
+						System = Color3.fromRGB(180, 140, 255),
+						Command = Color3.fromRGB(255, 255, 120),
+						Input = Color3.fromRGB(255, 220, 180),
+						Output = Color3.fromRGB(180, 255, 255),
+						Critical = Color3.fromRGB(255, 40, 40),
+						Trace = Color3.fromRGB(120, 120, 120),
+						Network = Color3.fromRGB(100, 180, 255),
+						Security = Color3.fromRGB(255, 80, 180),
+						Memory = Color3.fromRGB(255, 120, 120),
+						File = Color3.fromRGB(200, 255, 150),
+						Event = Color3.fromRGB(255, 180, 255),
+						Loading = Color3.fromRGB(255, 220, 100),
+						Hidden = Color3.fromRGB(90, 90, 90),
+					}
+
+					-- Callback Helper
+					local function fireCallback(state, object)
+						if Terminal.Callback then
+							task.spawn(function()
+								Terminal.Callback(state, object)
+							end)
+						end
+					end
+
+					-- Bounds Check
+					local function isOutOfBounds(guiObject)
+						local objectBottom = guiObject.AbsolutePosition.Y + guiObject.AbsoluteSize.Y
+						local containerBottom = List.AbsolutePosition.Y + List.AbsoluteSize.Y
+
+						return objectBottom > containerBottom
+					end
+
+					-- Remove Oldest
+					local function removeOldest()
+						local labels = {}
+
+						for _, child in ipairs(List:GetChildren()) do
+							if child:IsA("TextLabel") or child:IsA("TextBox") then
+								table.insert(labels, child)
+							end
+						end
+
+						if #labels == 0 then
+							return
+						end
+
+						table.sort(labels, function(a, b)
+							return a.LayoutOrder < b.LayoutOrder
+						end)
+
+						local oldest = labels[1]
+
+						fireCallback("Remove", oldest)
+						oldest:Destroy()
+					end
+
+					-- Overflow Check
+					local function checkOverflow()
+						for _, child in ipairs(List:GetChildren()) do
+							if (child:IsA("TextLabel") or child:IsA("TextBox")) and isOutOfBounds(child) then
+								removeOldest()
+								task.defer(checkOverflow)
+								break
+							end
+						end
+					end
+
+					-- Public Functions
+
+					function Terminal:Add(text, config)
+						config = config or {}
+						
+						local Sound = Instance.new("Sound")
+						Sound.SoundId = "rbxassetid://140207837688369"
+						Sound.Volume = 0.01
+						Sound.PlaybackSpeed = 1
+						Sound.PlayOnRemove = true
+						Sound.Parent = game:GetService("SoundService")
+						Sound:Remove()
+
+						Terminal.CurrentLayoutOrder += 1
+
+						local messageType = config.type or "Print"
+						local selectable = config.Selectable or false
+						local wrapped = config.Wrapped or false
+						local sizeY = config.SizeY or 14
+
+						local baseProperties = {
+							Name = "Label",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, -2, 0, sizeY),
+							AutomaticSize = wrapped and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
+							Font = Enum.Font.SourceSans,
+							Text = tostring(text),
+							TextSize = 14,
+							TextWrapped = wrapped,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextColor3 = MessageColors[messageType] or MessageColors.Print,
+							LayoutOrder = Terminal.CurrentLayoutOrder,
+						}
+
+						local Object
+
+						if selectable then
+							Object = SelfModules.UI.Create("TextBox", {
+								Name = baseProperties.Name,
+								BackgroundTransparency = baseProperties.BackgroundTransparency,
+								Size = baseProperties.Size,
+								AutomaticSize = baseProperties.AutomaticSize,
+								Font = baseProperties.Font,
+								Text = baseProperties.Text,
+								TextSize = baseProperties.TextSize,
+								TextWrapped = baseProperties.TextWrapped,
+								TextXAlignment = baseProperties.TextXAlignment,
+								TextYAlignment = baseProperties.TextYAlignment,
+								TextColor3 = baseProperties.TextColor3,
+								LayoutOrder = baseProperties.LayoutOrder,
+
+								ClearTextOnFocus = false,
+								MultiLine = wrapped,
+								TextEditable = false,
+								Selectable = true,
+								Active = true,
+							})
+
+							local ClickDetector = SelfModules.UI.Create("TextButton", {
+								Name = "Detector",
+								BackgroundTransparency = 1,
+								Size = UDim2.new(1, 0, 1, 0),
+								Text = "",
+								ZIndex = (Object.ZIndex or 1) + 1,
+							})
+
+							ClickDetector.Parent = Object
+
+							ClickDetector.MouseButton1Click:Connect(function()
+								Object:CaptureFocus()
+
+								task.defer(function()
+									if Object.Parent then
+										Object.CursorPosition = #Object.Text + 1
+										Object.SelectionStart = 1
+									end
+								end)
+							end)
+						else
+							Object = SelfModules.UI.Create("TextLabel", baseProperties)
+						end
+
+						Object.Parent = List
+
+						table.insert(Terminal.List, Object)
+
+						fireCallback("Add", Object)
+
+						task.defer(checkOverflow)
+
+						return Object
+					end
+
+					function Terminal:Remove(object)
+						if not object then
+							return
+						end
+
+						if object.Parent == List then
+							fireCallback("Remove", object)
+							object:Destroy()
+						end
+					end
+
+					function Terminal:Reset()
+						for _, child in ipairs(List:GetChildren()) do
+							if child:IsA("TextLabel") or child:IsA("TextBox") then
+								fireCallback("Remove", child)
+								child:Destroy()
+							end
+						end
+
+						Terminal.List = {}
+						Terminal.CurrentLayoutOrder = 0
+					end
+
+					function Terminal:GetChildren()
+						local objects = {}
+
+						for _, child in ipairs(List:GetChildren()) do
+							if child:IsA("TextLabel") or child:IsA("TextBox") then
+								table.insert(objects, child)
+							end
+						end
+
+						return objects
+					end
+
+					function Terminal:GetCount()
+						local count = 0
+
+						for _, child in ipairs(List:GetChildren()) do
+							if child:IsA("TextLabel") or child:IsA("TextBox") then
+								count += 1
+							end
+						end
+
+						return count
+					end
+
+					SubSection.List[#SubSection.List + 1] = Terminal
+					Terminal.Frame.Parent = SubSection.Frame.Holder.List
+
+					return Terminal
+				end
+				
+				-- Graph
+				function SubSection:AddGraph(name, options, callback)
+					local Graph = {
+						Name = name,
+						Type = "Graph",
+						Options = options,
+						Callback = callback,
+					}
+
+					-- Frame
+					Graph.Frame = SelfModules.UI.Create("Frame", {
+						Name = name,
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+						Size = UDim2.new(1, 2, 0, math.clamp(Graph.Options.extend, 55, 1000) or 280),
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Holder",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(10, 10, 10)),
+							Size = UDim2.new(1, -2, 1, -2),
+							Position = UDim2.new(0, 1, 0, 1),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Label",
+								BackgroundTransparency = 1,
+								Position = UDim2.new(0, 5, 0, 5),
+								Size = UDim2.new(1, -10, 0, 14),
+								Font = Enum.Font.SourceSans,
+								Text = name,
+								TextColor3 = Library.Theme.TextColor,
+								TextSize = 14,
+								TextWrapped = true,
+								TextXAlignment = Enum.TextXAlignment.Left,
+							}),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Field",
+								BackgroundColor3 = SelfModules.UI.Color.Sub(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+								Position = UDim2.new(0.5, 0, 0, 25),
+								Size = UDim2.new(1, -8, 1, -30),
+								AnchorPoint = Vector2.new(0.5, 0),
+
+								SelfModules.UI.Create("Frame", {
+									Name = "Holder",
+									BackgroundColor3 = Library.Theme.SectionColor,
+									Position = UDim2.new(0, 1, 0, 1),
+									Size = UDim2.new(1, -2, 1, -2),
+
+									SelfModules.UI.Create("Frame", {
+										Name = "List",
+										BackgroundTransparency = 1,
+										Size = UDim2.new(1, 0, 1, 0),
+										ClipsDescendants = true,
+									}),
+								}, UDim.new(0, 5)),
+							}, UDim.new(0, 5)),
+						}, UDim.new(0, 5)),
+					}, UDim.new(0, 5))
+
+					-- Scripts
+					local points    = {}
+					local linePool  = {}
+					local MIN       = Graph.Options.min       or 0
+					local MAX       = Graph.Options.max       or 100
+					local MAX_POINTS = Graph.Options.points   or 50
+					local THICKNESS = Graph.Options.thickness or 1.5
+
+					local List = Graph.Frame.Holder.Field.Holder.List
+
+					local function getLine(index)
+						if not linePool[index] then
+							local f = SelfModules.UI.Create("Frame", {
+								BackgroundColor3 = Library.Theme.Accent,
+								BorderSizePixel = 0,
+								Visible = false,
+
+								SelfModules.UI.Create("ImageLabel", {
+									Name = "Glow",
+									BackgroundTransparency = 1,
+									Position = UDim2.new(0, -3, 0, -3),
+									Size = UDim2.new(1, 6, 1, 6),
+									Image = "rbxassetid://10822615828",
+									ImageColor3 = SelfModules.UI.Color.Sub(Library.Theme.Accent, Color3.fromRGB(10, 10, 10)),
+									ScaleType = Enum.ScaleType.Slice,
+									SliceCenter = Rect.new(99, 99, 99, 99),
+									ImageTransparency = 0.98,
+									SliceScale = 1,
+								}),
+							})
+							f.Parent = List
+							linePool[index] = f
+						end
+						return linePool[index]
+					end
+
+					local function drawLine(frame, ax, ay, bx, by)
+						local dx = bx - ax
+						local dy = by - ay
+						local length = math.sqrt(dx * dx + dy * dy)
+						local angle  = math.deg(math.atan2(dy, dx))
+						local mx = (ax + bx) / 2
+						local my = (ay + by) / 2
+
+						frame.AnchorPoint = Vector2.new(0.5, 0.5)
+						frame.Position    = UDim2.new(0, mx, 0, my)
+						frame.Size        = UDim2.new(0, length, 0, THICKNESS)
+						frame.Rotation    = angle
+						frame.Visible     = true
+					end
+
+					local function hideUnused(from)
+						for i = from, #linePool do
+							if linePool[i] then
+								linePool[i].Visible = false
+							end
+						end
+					end
+
+					local function redraw()
+						local w     = List.AbsoluteSize.X
+						local h     = List.AbsoluteSize.Y
+						local count = #points
+
+						if count < 2 then return end
+
+						local spacing = w / (MAX_POINTS - 1)
+
+						for i = 1, count - 1 do
+							local ax = (i - 1) * spacing
+							local bx = i       * spacing
+							local ay = points[i]     * h
+							local by = points[i + 1] * h
+
+							drawLine(getLine(i), ax, ay, bx, by)
+						end
+
+						hideUnused(count)
+					end
+
+					-- Functions
+
+					-- Adds a new value to the graph
+					function Graph:Add(value)
+						local clamped    = math.clamp(value, MIN, MAX)
+						local percentage = 1 - ((clamped - MIN) / (MAX - MIN))
+
+						table.insert(points, percentage)
+						if #points > MAX_POINTS then
+							table.remove(points, 1)
+						end
+
+						if Graph.Callback then
+							-- Returning value
+							Graph.Callback(clamped)
+						end
+
+						redraw()
+					end
+
+					-- Returns the average calculated value
+					function Graph:GetAverage()
+						if #points == 0 then return 0 end
+
+						local sum = 0
+						for _, percentage in ipairs(points) do
+							-- convert percentage back to real value
+							sum = sum + (MIN + ((1 - percentage) * (MAX - MIN)))
+						end
+
+						return sum / #points
+					end
+
+					-- Sets how many points fit across the graph (fewer = longer segments, more = shorter)
+					function Graph:Scale(value)
+						MAX_POINTS = math.clamp(math.floor(value), 2, 500)
+
+						-- Trim existing points if new scale is smaller
+						while #points > MAX_POINTS do
+							table.remove(points, 1)
+						end
+
+						redraw()
+					end
+
+					-- Changes the thickness of all lines
+					function Graph:Thickness(value)
+						THICKNESS = math.clamp(value, 0.5, 10)
+						redraw()
+					end
+
+					-- Clears all lines and resets state
+					function Graph:Clear()
+						points = {}
+
+						for _, line in ipairs(linePool) do
+							if line then
+								line:Destroy()
+							end
+						end
+
+						linePool = {}
+					end
+
+					function Graph:SetPoints(value)
+						MAX_POINTS = math.clamp(math.floor(value), 2, 500)
+
+						while #points > MAX_POINTS do
+							table.remove(points, 1)
+						end
+
+						redraw()
+					end
+
+					SubSection.List[#SubSection.List + 1] = Graph
+					Graph.Frame.Parent = SubSection.Frame.Holder.List
+
+					return Graph
+				end
+
+				-- Priority
+				function SubSection:AddPriority(name, list, options, callback)
+					local Ranker = {
+						Name     = name,
+						Type     = "Ranker",
+						Toggled  = false,
+						Order    = {},
+						Excluded = {},
+						List     = {},
+						Callback = callback,
+					}
+
+					local ITEM_HEIGHT  = 32
+					local ITEM_GAP     = 4
+					local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
+					local HAS_EXCLUDE  = options and options.exclude == true
+					local DIVIDER_KEY  = "__DIVIDER__"
+
+					local unified      = {}
+					local frameMap     = {}
+					local dividerFrame = nil
+
+					local function slotY(i)
+						return (i - 1) * ITEM_STRIDE
+					end
+
+					local function totalListH()
+						return math.max(#unified, 1) * ITEM_STRIDE - ITEM_GAP
+					end
+
+					local function rebuildOrderExcluded()
+						Ranker.Order    = {}
+						Ranker.Excluded = {}
+						if not HAS_EXCLUDE then
+							for _, v in ipairs(unified) do
+								if v ~= DIVIDER_KEY then
+									Ranker.Order[#Ranker.Order + 1] = v
+								end
+							end
+							return
+						end
+						local pastDivider = false
+						for _, v in ipairs(unified) do
+							if v == DIVIDER_KEY then
+								pastDivider = true
+							elseif pastDivider then
+								Ranker.Excluded[#Ranker.Excluded + 1] = v
+							else
+								Ranker.Order[#Ranker.Order + 1] = v
+							end
+						end
+					end
+
+					local function refreshNumbers()
+						local activeNum = 1
+						for _, v in ipairs(unified) do
+							if v == DIVIDER_KEY then
+								activeNum = nil
+							else
+								local f = frameMap[v]
+								if f then
+									if activeNum then
+										f.Holder.Num.Text = tostring(activeNum)
+										f.Holder.Num.TextColor3 = Library.Theme.Accent
+										activeNum = activeNum + 1
+									else
+										f.Holder.Num.Text = "—"
+										f.Holder.Num.TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55))
+									end
+								end
+							end
+						end
+					end
+
+					local function refreshPositions(skipName)
+						for i, v in ipairs(unified) do
+							if v ~= skipName then
+								local f = v == DIVIDER_KEY and dividerFrame or frameMap[v]
+								if f then
+									tween(f, 0.18, { Position = UDim2.new(0, 0, 0, slotY(i)) })
+								end
+							end
+						end
+					end
+
+					Ranker.Frame = SelfModules.UI.Create("Frame", {
+						Name = "Ranker",
+						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+						Size = UDim2.new(1, 2, 0, 42),
+						ClipsDescendants = true,
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Holder",
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(10, 10, 10)),
+							Position = UDim2.new(0, 1, 0, 1),
+							Size = UDim2.new(1, -2, 1, -2),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Holder",
+								BackgroundTransparency = 1,
+								Size = UDim2.new(1, 0, 0, 40),
+
+								SelfModules.UI.Create("TextLabel", {
+									Name = "Label",
+									BackgroundTransparency = 1,
+									Position = UDim2.new(0, 5, 0, 8),
+									Size = UDim2.new(1, -35, 0, 14),
+									Font = Enum.Font.SourceSans,
+									Text = name,
+									TextColor3 = Library.Theme.TextColor,
+									TextSize = 14,
+									TextWrapped = true,
+									TextXAlignment = Enum.TextXAlignment.Left,
+								}),
+
+								SelfModules.UI.Create("TextLabel", {
+									Name = "Count",
+									BackgroundTransparency = 1,
+									Position = UDim2.new(0.5, 0, 0, 8),
+									Size = UDim2.new(0.5, -30, 0, 14),
+									Font = Enum.Font.SourceSans,
+									Text = "",
+									TextColor3 = SelfModules.UI.Color.Add(Library.Theme.TextColor, Color3.fromRGB(-60, -60, -60)),
+									TextSize = 12,
+									TextWrapped = true,
+									TextXAlignment = Enum.TextXAlignment.Right,
+								}),
+
+								SelfModules.UI.Create("ImageLabel", {
+									Name = "Indicator",
+									AnchorPoint = Vector2.new(1, 0),
+									BackgroundTransparency = 1,
+									Position = UDim2.new(1, -5, 0, 5),
+									Size = UDim2.new(0, 20, 0, 20),
+									Image = "rbxassetid://9243354333",
+								}),
+
+								SelfModules.UI.Create("Frame", {
+									Name = "Line",
+									BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
+									BorderSizePixel = 0,
+									Position = UDim2.new(0, 5, 0, 30),
+									Size = UDim2.new(1, -10, 0, 2),
+								}),
+							}, UDim.new(0, 5)),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "List",
+								BackgroundTransparency = 1,
+								BorderSizePixel = 0,
+								Position = UDim2.new(0, 5, 0, 44),
+								Size = UDim2.new(1, -10, 0, 0),
+								ClipsDescendants = true,
+							}),
+						}, UDim.new(0, 5)),
+					}, UDim.new(0, 5))
+
+					-- Divider frame: just a slot like any other, not draggable
+					if HAS_EXCLUDE then
+						dividerFrame = SelfModules.UI.Create("Frame", {
+							Name = DIVIDER_KEY,
+							BackgroundTransparency = 1,
+							Position = UDim2.new(0, 0, 0, 0),
+							Size = UDim2.new(1, 0, 0, ITEM_HEIGHT),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "LineLeft",
+								BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(25, 25, 25)),
+								BorderSizePixel = 0,
+								AnchorPoint = Vector2.new(0, 0.5),
+								Position = UDim2.new(0, 0, 0.5, 0),
+								Size = UDim2.new(0.28, 0, 0, 1),
+							}),
+
+							SelfModules.UI.Create("TextLabel", {
+								Name = "Label",
+								BackgroundTransparency = 1,
+								Size = UDim2.new(1, 0, 1, 0),
+								Font = Enum.Font.SourceSans,
+								Text = "not in use",
+								TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55)),
+								TextSize = 11,
+							}),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "LineRight",
+								BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(25, 25, 25)),
+								BorderSizePixel = 0,
+								AnchorPoint = Vector2.new(1, 0.5),
+								Position = UDim2.new(1, 0, 0.5, 0),
+								Size = UDim2.new(0.28, 0, 0, 1),
+							}),
+						})
+						dividerFrame.Parent = Ranker.Frame.Holder.List
+						unified[1] = DIVIDER_KEY -- divider starts at top, items added below it
+					end
+
+					-- Height
+					function Ranker:GetHeight()
+						if not Ranker.Toggled then return 42 end
+						return 42 + totalListH() + 8
+					end
+
+					function Ranker:UpdateHeight()
+						Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
+						Ranker.Frame.Holder.Holder.Count.Text = #Ranker.List > 0 and (#Ranker.List .. " items") or ""
+						if Ranker.Toggled then
+							Ranker.Frame.Size = UDim2.new(1, 2, 0, Ranker:GetHeight())
+							SubSection:UpdateHeight()
+							Section:UpdateHeight()
+						end
+					end
+					
+					function Ranker:Toggle(bool)
+						Ranker.Toggled = bool
+						Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
+						tween(Ranker.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Ranker:GetHeight()) })
+						tween(Ranker.Frame.Holder.Holder.Indicator, 0.5, { Rotation = bool and 90 or 0 })
+						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, SubSection.Frame.Size.X.Offset, 0, SubSection:GetHeight()) })
+						tween(Section.Frame, 0.5, { Size = UDim2.new(1, -8, 0, Section:GetHeight()) })
+						tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+					end
+
+					-- Drag state
+					local dragging    = nil
+					local dragFrame   = nil
+					local dragOffsetY = 0
+
+					-- Add
+					function Ranker:Add(itemName, excluded)
+						local Item = { Name = itemName }
+
+						local insertAt
+						if HAS_EXCLUDE then
+							if excluded then
+								-- below divider at end
+								insertAt = #unified + 1
+							else
+								-- above divider
+								local di = table.find(unified, DIVIDER_KEY)
+								insertAt = di -- inserts before divider
+							end
+						else
+							insertAt = #unified + 1
+						end
+
+						local posY = slotY(insertAt)
+
+						Item.Frame = SelfModules.UI.Create("Frame", {
+							Name = itemName,
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+							Position = UDim2.new(0, 0, 0, posY),
+							Size = UDim2.new(1, 0, 0, ITEM_HEIGHT),
+
+							SelfModules.UI.Create("Frame", {
+								Name = "Holder",
+								BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(10, 10, 10)),
+								Position = UDim2.new(0, 1, 0, 1),
+								Size = UDim2.new(1, -2, 1, -2),
+
+								SelfModules.UI.Create("TextLabel", {
+									Name = "Num",
+									BackgroundTransparency = 1,
+									Position = UDim2.new(0, 5, 0, 0),
+									Size = UDim2.new(0, 18, 1, 0),
+									Font = Enum.Font.SourceSansBold,
+									Text = "?",
+									TextColor3 = Library.Theme.Accent,
+									TextSize = 15,
+								}),
+
+								SelfModules.UI.Create("TextLabel", {
+									Name = "Label",
+									BackgroundTransparency = 1,
+									Position = UDim2.new(0, 26, 0, 0),
+									Size = UDim2.new(1, -46, 1, 0),
+									Font = Enum.Font.SourceSans,
+									Text = itemName,
+									TextColor3 = Library.Theme.TextColor,
+									TextSize = 15,
+									TextXAlignment = Enum.TextXAlignment.Left,
+								}),
+
+								SelfModules.UI.Create("TextLabel", {
+									Name = "Handle",
+									AnchorPoint = Vector2.new(1, 0.5),
+									BackgroundTransparency = 1,
+									Position = UDim2.new(1, -6, 0.5, 0),
+									Size = UDim2.new(0, 16, 1, 0),
+									Font = Enum.Font.SourceSansBold,
+									Text = "::",
+									TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(60, 60, 60)),
+									TextSize = 15,
+								}),
+							}, UDim.new(0, 4)),
+						}, UDim.new(0, 4))
+
+						table.insert(unified, insertAt, itemName)
+						Ranker.List[#Ranker.List + 1] = itemName
+						frameMap[itemName] = Item.Frame
+						Item.Frame.Parent = Ranker.Frame.Holder.List
+
+						rebuildOrderExcluded()
+						refreshNumbers()
+						refreshPositions(nil)
+						Ranker:UpdateHeight()
+
+						Item.Frame.InputBegan:Connect(function(input)
+							if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+							if dragging then return end
+
+							dragging    = itemName
+							dragFrame   = Item.Frame
+							dragOffsetY = input.Position.Y - Item.Frame.AbsolutePosition.Y
+
+							tween(Item.Frame, 0.1, {
+								BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(30, 30, 30)),
+							})
+							Item.Frame.ZIndex        = 10
+							Item.Frame.Holder.ZIndex = 10
+						end)
+
+						return Item
+					end
+
+					function Ranker:Remove(itemName, ignoreToggle)
+						local ui = table.find(unified, itemName)
+						if ui then table.remove(unified, ui) end
+						frameMap[itemName]:Destroy()
+						frameMap[itemName] = nil
+						for i, v in next, Ranker.List do
+							if v == itemName then table.remove(Ranker.List, i) break end
+						end
+						rebuildOrderExcluded()
+						refreshNumbers()
+						refreshPositions(nil)
+						if Ranker.Toggled and not ignoreToggle then Ranker:UpdateHeight() end
+						if #Ranker.List == 0 and not ignoreToggle then Ranker:Toggle(false) end
+					end
+
+					function Ranker:ClearList()
+						for _ = 1, #Ranker.List do Ranker:Remove(Ranker.List[1], true) end
+					end
+
+					function Ranker:SetList(newList)
+						Ranker:ClearList()
+						for _, v in next, newList do Ranker:Add(v) end
+					end
+
+					function Ranker:GetOrder()    return Ranker.Order    end
+					function Ranker:GetExcluded() return Ranker.Excluded end
+
+					-- Drag move
+					UIS.InputChanged:Connect(function(input)
+						if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+						if not dragging or not dragFrame then return end
+
+						local mouseY  = input.Position.Y
+						local listTop = Ranker.Frame.Holder.List.AbsolutePosition.Y
+						local localY  = mouseY - dragOffsetY - listTop
+						local clampedY = math.clamp(localY, 0, totalListH() - ITEM_HEIGHT)
+
+						dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
+
+						-- which slot is the center of the dragged frame hovering over
+						local centerY    = clampedY + ITEM_HEIGHT / 2
+						local targetSlot = math.clamp(math.round(centerY / ITEM_STRIDE) + 1, 1, #unified)
+
+						-- never allow dropping ON the divider slot, push past it
+						if HAS_EXCLUDE and unified[targetSlot] == DIVIDER_KEY then
+							local currentSlot = table.find(unified, dragging)
+							targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
+							targetSlot = math.clamp(targetSlot, 1, #unified)
+						end
+
+						local currentSlot = table.find(unified, dragging)
+						if targetSlot ~= currentSlot and currentSlot then
+							table.remove(unified, currentSlot)
+							table.insert(unified, targetSlot, dragging)
+							rebuildOrderExcluded()
+							refreshNumbers()
+							refreshPositions(dragging)
+						end
+					end)
+
+					-- Release: snap
+					UIS.InputEnded:Connect(function(input)
+						if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+						if not dragging or not dragFrame then return end
+
+						local slot  = table.find(unified, dragging)
+						local snapY = slotY(slot or 1)
+
+						tween(dragFrame, 0.2, {
+							BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
+							Position = UDim2.new(0, 0, 0, snapY),
+						})
+
+						dragFrame.ZIndex        = 1
+						dragFrame.Holder.ZIndex = 1
+						dragging  = nil
+						dragFrame = nil
+
+						pcall(task.spawn, Ranker.Callback, Ranker.Order, Ranker.Excluded)
+					end)
+
+					Ranker.Frame.InputBegan:Connect(function(input)
+						if input.UserInputType == Enum.UserInputType.MouseButton1
+							and #Ranker.List > 0
+							and Mouse.Y - Ranker.Frame.AbsolutePosition.Y <= 30 then
+							Ranker:Toggle(not Ranker.Toggled)
+						end
+					end)
+
+					SubSection.List[#SubSection.List + 1] = Ranker
+					Ranker.Frame.Parent = SubSection.Frame.Holder.List
+
+					for _, v in next, list do Ranker:Add(v) end
+
+					return Ranker
+				end
 
 				-- Button
 				function SubSection:AddButton(name, callback)
@@ -3744,7 +5710,7 @@ function Library:AddWindow(options)
 					}, UDim.new(0, 5))
 
 					local function extendBox(bool)
-						tween(Box.Frame.Holder.TextBox, 0.25, { Size = UDim2.new(0, bool and math.abs(Box.Extend) or bool and 200 or 140, 1, -4) })
+						tween(Box.Frame.Holder.TextBox, 0.25, { Size = UDim2.new(0, bool and math.clamp(math.abs(Box.Extend), 140, 386 - (Box.Frame.Holder.Label.TextBounds.X + 20)) or bool and 200 or 140, 1, -4) })
 					end
 					function Box:SetName(text)
 						Box.Frame.Holder.Label.Text = text
@@ -5020,225 +6986,397 @@ function Library:AddWindow(options)
 	return Window
 end
 
-function Library:Auth(options)
-	assert(options, "No options data assigned to Auth")
-	if options ~= {} then
-		local Menu = {
-			Type = "Verification Menu",
-			Key = options.Key,
-			Selection = nil,
-			Callback = nil,
-			Authenticated = false,
-		}
-		Menu.Frame = SelfModules.UI.Create("CanvasGroup", {
-			Name = "Window",
-			Size = UDim2.new(0, 648, 0, 330),
-			BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-			Position = UDim2.new(2, 0, 0.5, 0),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			SelfModules.UI.Create("ImageLabel", {
-				Name = "Icon",
-				BackgroundTransparency = 1,
-				Size = UDim2.new(0.5, 0, 1, 0),
-				Position = UDim2.new(0.5, 0, 0, 0),
-				ScaleType = Enum.ScaleType.Crop,
-				Image = options.Icon or "rbxassetid://0",
-			}),
+function Library:AddAuthentication(options)
+	assert(type(options) == "table", "Authentication requires an options table")
+	assert(options.Key, "Authentication requires options.Key")
+	assert(options.Method == "Key" or options.Method == "Token", 'Authentication requires options.Method to be "Key" or "Token"')
+
+	local Verification = {
+		Type = "Authentication Menu",
+		_secretKey = options.Key,
+		_activeMethod = options.Method,
+		_isAuthenticated = false,
+		_lastInput = nil,
+		_onSubmit = nil,
+	}
+
+	local icon, hasIcon do
+		local raw = options.Icon
+		if type(raw) == "string" and raw ~= "" then
+			icon = raw:find("rbxassetid://", 1, true) and raw or ("rbxassetid://" .. raw)
+			hasIcon = true
+		else
+			icon = nil
+			hasIcon = false
+		end
+	end
+
+	Verification.Frame = SelfModules.UI.Create("CanvasGroup", {
+		Name = "Window",
+		Size = UDim2.new(0, 324, 0, 330),
+		BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+		Position = UDim2.new(2, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+
+		hasIcon and SelfModules.UI.Create("ImageLabel", {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(0.5, 0, 1, 0),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			ScaleType = Enum.ScaleType.Crop,
+			Image = icon,
+			ImageTransparency = 1,
+		}) or nil,
+
+		SelfModules.UI.Create("Frame", {
+			Name = "PositionHandler",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+
 			SelfModules.UI.Create("Frame", {
-				Name = "PositionHandler",
-				BackgroundTransparency = 1,
-				Size = UDim2.new(0, 324, 0, 330),
+				Name = "Handler",
+				Size = UDim2.new(1, -2, 1, -2),
+				Position = UDim2.new(0, 1, 0, 1),
+				BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+				BorderSizePixel = 0,
+
+				SelfModules.UI.Create("UICorner", {
+					CornerRadius = UDim.new(0, 12),
+				}),
+
 				SelfModules.UI.Create("Frame", {
-					Name = "Handler",
-					Size = UDim2.new(1, -2, 1, -2),
-					Position = UDim2.new(0, 1, 0, 1),
-					BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+					Name = "InputField",
+					BackgroundTransparency = 1,
+					Size = UDim2.new(0, 260, 0, 51),
+					Position = UDim2.new(0.097, 0, 0.282, 0),
 					BorderSizePixel = 0,
-					SelfModules.UI.Create("UICorner", {
-						Name = "UICorner",
-						CornerRadius = UDim.new(0, 12),
-					}),
-					SelfModules.UI.Create("Frame", {
-						Name = "TextBox",
+
+					SelfModules.UI.Create("TextBox", {
+						Name = "Box",
 						BackgroundTransparency = 1,
-						Size = UDim2.new(0, 260, 0, 51),
-						Position = UDim2.new(0.097, 0,0.282, 0),
+						Size = UDim2.new(0, 226, 0, 20),
+						Position = UDim2.new(0.0242, 0, 0.4706, 0),
+						Font = Enum.Font.SourceSans,
+						PlaceholderColor3 = Color3.fromRGB(200, 200, 200),
+						PlaceholderText = options.Method == "Token" and "Token" or "Key",
+						Text = "",
+						TextColor3 = Color3.fromRGB(255, 255, 255),
+						ClearTextOnFocus = false,
+						TextSize = 15,
+						TextXAlignment = Enum.TextXAlignment.Left,
 						BorderSizePixel = 0,
-						SelfModules.UI.Create("TextBox", {
-							Name = "Box",
-							BackgroundTransparency = 1,
-							Size = UDim2.new(0, 226, 0, 20),
-							Position = UDim2.new(0.0242239144, 0, 0.470588237, 0),
-							Font = Enum.Font.SourceSans,
-							PlaceholderColor3 = Color3.fromRGB(200, 200, 200),
-							PlaceholderText = "Key",
-							Text = "",
-							TextColor3 = Color3.fromRGB(255, 255, 255),
-							ClearTextOnFocus = false,
-							TextSize = 15.000,
-							TextXAlignment = Enum.TextXAlignment.Left,
-							BorderSizePixel = 0,
-						}),
+					}),
+
+					SelfModules.UI.Create("Frame", {
+						Name = "Fill",
+						BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+						Position = UDim2.new(0, 0, 0.9412, 0),
+						Size = UDim2.new(1, 0, 0, 2),
+						BorderSizePixel = 0,
+
 						SelfModules.UI.Create("Frame", {
-							Name = "Fill",
-							BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-							Position = UDim2.new(0, 0, 0.941176474, 0),
-							Size = UDim2.new(1, 0, 0, 2),
+							Name = "ActiveFill",
+							BackgroundColor3 = Color3.fromRGB(70, 70, 70),
+							Size = UDim2.new(0, 0, 0, 2),
 							BorderSizePixel = 0,
-							SelfModules.UI.Create("Frame", {
-								Name = "ActualFill",
-								BackgroundColor3 = Color3.fromRGB(70,70,70),
-								Size = UDim2.new(0, 0, 0, 2),
-								BorderSizePixel = 0,
-								SelfModules.UI.Create("UICorner", {
-									Name = "UICorner",
-									CornerRadius = UDim.new(1, 0),
-								}),
+							SelfModules.UI.Create("UICorner", {
+								CornerRadius = UDim.new(1, 0),
 							}),
-						}),
-						SelfModules.UI.Create("ImageButton", {
-							Name = "Submit",
-							Image = "rbxassetid://9243354333",
-							BackgroundTransparency = 1,
-							Position = UDim2.new(0.902999997, 0, 0.470999986, 0),
-							Rotation = 270.000,
-							Size = UDim2.new(0, 20, 0, 20),
-							BorderSizePixel = 0,
 						}),
 					}),
-					SelfModules.UI.Create("Frame", {
-						Name = "Discord",
-						BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-						Position = UDim2.new(0.096, 0,0.604, 0),
-						Size = UDim2.new(0, 260, 0, 62),
+
+					SelfModules.UI.Create("ImageButton", {
+						Name = "SubmitButton",
+						Image = "rbxassetid://9243354333",
+						BackgroundTransparency = 1,
+						Position = UDim2.new(0.903, 0, 0.471, 0),
+						Rotation = 270,
+						Size = UDim2.new(0, 20, 0, 20),
 						BorderSizePixel = 0,
-						SelfModules.UI.Create("Frame", {
-							Name = "Button",
-							BackgroundColor3 = Color3.fromRGB(98, 111, 252),
-							Position = UDim2.new(0.0653846115, 0, 0.225806445, 0),
-							Size = UDim2.new(0, 223, 0, 34),
-							ZIndex = 2,
-							SelfModules.UI.Create("TextButton", {
-								Name = "TextButton",
-								BackgroundColor3 = Color3.fromRGB(88, 101, 242),
-								BorderColor3 = Color3.fromRGB(0, 0, 0),
-								BorderSizePixel = 0,
-								Position = UDim2.new(0, 1, 0, 1),
-								Size = UDim2.new(1, -2, 1, -2),
-								Font = Enum.Font.SourceSansBold,
-								Text = "Join Discord Server",
-								TextColor3 = Color3.fromRGB(255, 255, 255),
-								TextSize = 15.000,
-								AutoButtonColor = false,
-								ZIndex = 3,
-								SelfModules.UI.Create("UICorner", {
-									Name = "UICorner",
-									CornerRadius = UDim.new(0, 6),
-								}),
-							}),
+					}),
+				}),
+
+				SelfModules.UI.Create("Frame", {
+					Name = "Footer",
+					BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+					Position = UDim2.new(0.096, 0, 0.604, 0),
+					Size = UDim2.new(0, 260, 0, 62),
+					BorderSizePixel = 0,
+
+					SelfModules.UI.Create("Frame", {
+						Name = "DiscordButton",
+						BackgroundColor3 = Color3.fromRGB(98, 111, 252),
+						Position = UDim2.new(0.065, 0, 0.226, 0),
+						Size = UDim2.new(0, 111, 0, 34),
+						ZIndex = 2,
+
+						SelfModules.UI.Create("TextButton", {
+							Name = "TextButton",
+							BackgroundColor3 = Color3.fromRGB(88, 101, 242),
+							BorderSizePixel = 0,
+							Position = UDim2.new(0, 1, 0, 1),
+							Size = UDim2.new(1, -2, 1, -2),
+							Font = Enum.Font.SourceSansBold,
+							Text = "Discord Server",
+							TextColor3 = Color3.fromRGB(255, 255, 255),
+							TextSize = 15,
+							AutoButtonColor = false,
+							ZIndex = 3,
 							SelfModules.UI.Create("UICorner", {
-								Name = "UICorner",
 								CornerRadius = UDim.new(0, 6),
 							}),
 						}),
-						SelfModules.UI.Create("Frame", {
-							Name = "View",
-							BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+
+						SelfModules.UI.Create("UICorner", {
+							CornerRadius = UDim.new(0, 6),
+						}),
+					}),
+
+					SelfModules.UI.Create("Frame", {
+						Name = "ToggleMethodButton",
+						BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+						Position = UDim2.new(0.52, 0, 0.226, 0),
+						Size = UDim2.new(0, 111, 0, 34),
+						ZIndex = 2,
+
+						SelfModules.UI.Create("TextButton", {
+							Name = "TextButton",
+							BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+							BorderSizePixel = 0,
 							Position = UDim2.new(0, 1, 0, 1),
 							Size = UDim2.new(1, -2, 1, -2),
+							Font = Enum.Font.SourceSansBold,
+							Text = options.Method == "Token" and "Use Key" or "Sign In",
+							TextColor3 = Color3.fromRGB(255, 255, 255),
+							TextSize = 15,
+							AutoButtonColor = false,
+							ZIndex = 3,
+						}, UDim.new(0, 6)),
+					}, UDim.new(0, 6)),
+
+					SelfModules.UI.Create("Frame", {
+						Name = "View",
+						BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+						Position = UDim2.new(0, 1, 0, 1),
+						Size = UDim2.new(1, -2, 1, -2),
+						BorderSizePixel = 0,
+
+						SelfModules.UI.Create("Frame", {
+							Name = "Liner",
+							BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+							Position = UDim2.new(0.2364, 0, -0.04, 0),
+							Size = UDim2.new(0, 130, 0, 2),
 							BorderSizePixel = 0,
+							SelfModules.UI.Create("UIStroke", {
+								Color = Color3.fromRGB(30, 30, 30),
+							}),
+
 							SelfModules.UI.Create("TextLabel", {
 								Name = "Label",
 								BackgroundTransparency = 1,
-								Position = UDim2.new(0.279069752, 0, -0.225385219, 0),
+								AnchorPoint = Vector2.new(0.5, 0.5),
+								Position = UDim2.new(0.5, 0, 0.5, 0),
 								Size = UDim2.new(0, 115, 0, 20),
 								Font = Enum.Font.SourceSans,
-								Text = "How Do I Get Key?",
+								Text = "Looking for something?",
 								TextColor3 = Color3.fromRGB(255, 255, 255),
-								TextSize = 14.000,
+								TextSize = 14,
 								ZIndex = 2,
 								BorderSizePixel = 0,
 								SelfModules.UI.Create("UIStroke", {
-									Name = "UIStroke",
 									Thickness = 0.8,
 									Color = Color3.fromRGB(35, 35, 35),
 								}),
 							}),
-							SelfModules.UI.Create("Frame", {
-								Name = "Liner",
-								BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-								Position = UDim2.new(0.236434102, 0, -0.0400003269, 0),
-								Size = UDim2.new(0, 130, 0, 2),
-								BorderSizePixel = 0,
-								SelfModules.UI.Create("UIStroke", {
-									Name = "UIStroke",
-									Color = Color3.fromRGB(30, 30, 30)
-								})
-							}),
-							SelfModules.UI.Create("UICorner", {
-								Name = "UICorner",
-								CornerRadius = UDim.new(0, 14),
-							}),
 						}),
+
 						SelfModules.UI.Create("UICorner", {
-							Name = "UICorner",
 							CornerRadius = UDim.new(0, 14),
 						}),
-						SelfModules.UI.Create("UIStroke", {
-							Name = "UIStroke",
-							Thickness = 0.8,
-							Color = Color3.fromRGB(35, 35, 35),
-						}),
+					}),
+
+					SelfModules.UI.Create("UICorner", {
+						CornerRadius = UDim.new(0, 14),
+					}),
+					SelfModules.UI.Create("UIStroke", {
+						Thickness = 0.8,
+						Color = Color3.fromRGB(35, 35, 35),
 					}),
 				}),
 			}),
-		}, UDim.new(0, 12))
+		}),
+	}, UDim.new(0, 12))
 
-		Menu.Frame.Parent = ScreenGui
-		local CanClick = false
-		local TextBoxConnection = nil
+	Verification.Frame.Parent = ScreenGui
 
-		local Tinfo = TweenInfo.new(1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		local Tinfo2 = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-		local Tinfo3 = TweenInfo.new(2.5, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+	local handler = Verification.Frame.PositionHandler.Handler
+	local inputField = handler.InputField
+	local box = inputField.Box
+	local activeFill = inputField.Fill.ActiveFill
+	local toggleBtn = handler.Footer.ToggleMethodButton.TextButton
 
-		TS:Create(Menu.Frame, Tinfo, {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+	local COLORS = {
+		correct = Color3.fromRGB(125, 255, 125),
+		incorrect = Color3.fromRGB(255, 125, 125),
+		neutral = Color3.fromRGB(70, 70, 70),
+		expanded = UDim2.new(1, 0, 0, 2),
+		collapsed = UDim2.new(0, 0, 0, 2),
+	}
 
-		Storage.Connections.SubmitButton = Menu.Frame.PositionHandler.Handler.TextBox.Submit.MouseButton1Click:Connect(function()
-			if Menu.Frame.PositionHandler.Handler.TextBox.Box.Text == options.Key and CanClick == false then
-				CanClick = true
-				Menu.Authenticated = true
-				TextBoxConnection:Disconnect()
-				TS:Create(Menu.Frame, Tinfo3, {GroupTransparency = 1, Rotation = math.random(-15, 15), Position = UDim2.new(0.5, 0, 2, 0)}):Play()
-				task.wait(1.5)
-				Menu.Frame:Destroy()
-			end
-		end)
-
-		Storage.Connections.Focus = Menu.Frame.PositionHandler.Handler.TextBox.Box.Focused:Connect(function()
-			if Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill and Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill.Parent == Menu.Frame.PositionHandler.Handler.TextBox.Fill then
-				TS:Create(Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill, Tinfo2, { Size = UDim2.new(1,0,0,2) }):Play()
-			end
-		end)
-
-		Storage.Connections.LostFocus = Menu.Frame.PositionHandler.Handler.TextBox.Box.FocusLost:Connect(function()
-			-- intentionally empty
-		end)
-
-		TextBoxConnection = RS.Heartbeat:Connect(function()
-			if Menu.Frame.PositionHandler.Handler.TextBox.Box then
-				if Menu.Frame.PositionHandler.Handler.TextBox.Box.Text == options.Key then
-					TS:Create(Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill, Tinfo2, { BackgroundColor3 = Color3.fromRGB(125,255,125) }):Play()
-				elseif Menu.Frame.PositionHandler.Handler.TextBox.Box.Text ~= "" then
-					TS:Create(Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill, Tinfo2, { BackgroundColor3 = Color3.fromRGB(255,125,125) }):Play()
-				else
-					TS:Create(Menu.Frame.PositionHandler.Handler.TextBox.Fill.ActualFill, Tinfo2, { BackgroundColor3 = Color3.fromRGB(70,70,70) }):Play()
-				end
-			end
-		end)
-
-		return Menu
+	local Tinfo = TweenInfo.new(1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	local Tinfo2 = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local Tinfo3 = TweenInfo.new(2.5, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+	
+	function Verification:OnSubmit(callback)
+		assert(type(callback) == "function", "OnSubmit requires a function")
+		self._onSubmit = callback
 	end
+
+	function Verification:GetActiveMethod()
+		return self._activeMethod
+	end
+
+	function Verification:IsAuthenticated()
+		return self._isAuthenticated
+	end
+
+	function Verification:GetInput()
+		return self._lastInput
+	end
+
+	function Verification:Close()
+		for _, conn in pairs(Storage.Connections) do
+			if typeof(conn) == "RBXScriptConnection" then
+				conn:Disconnect()
+			end
+		end
+
+		TS:Create(Verification.Frame, Tinfo3, {
+			GroupTransparency = 1,
+			Rotation = math.random(-15, 15),
+			Position = UDim2.new(0.5, 0, 2, 0),
+		}):Play()
+
+		task.delay(1.5, function()
+			if Verification.Frame and Verification.Frame.Parent then
+				Verification.Frame:Destroy()
+			end
+		end)
+	end
+
+	TS:Create(Verification.Frame, Tinfo, {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+
+	if hasIcon then
+		local iconLabel = Verification.Frame.Icon
+
+		task.spawn(function()
+			game:GetService("ContentProvider"):PreloadAsync({iconLabel})
+
+			local elapsed = 0
+			repeat
+				elapsed += task.wait()
+			until elapsed >= 0.5 or Verification._isAuthenticated
+
+			if Verification._isAuthenticated then return end
+
+			local expandInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+			TS:Create(Verification.Frame, expandInfo, {
+				Size = UDim2.new(0, 648, 0, 330),
+			}):Play()
+
+			TS:Create(Verification.Frame.PositionHandler, expandInfo, {
+				Size = UDim2.new(0, 324, 0, 330),
+			}):Play()
+
+			task.wait(0.2)
+			TS:Create(iconLabel, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+				ImageTransparency = 0,
+			}):Play()
+		end)
+	end
+
+	local function setFillColor(color)
+		TS:Create(activeFill, Tinfo2, {BackgroundColor3 = color}):Play()
+	end
+
+	local discordBusy = false
+	local function onDiscordClicked()
+		if not discordBusy then
+			discordBusy = true
+			handler.Footer.DiscordButton.TextButton.Text = RS:IsStudio() and "Retry Later"
+			wait(1.5)
+			handler.Footer.DiscordButton.TextButton.Text = RS:IsStudio() and "Discord Server"
+			discordBusy = false
+		end
+	end
+
+	Storage.Connections.DiscordButton = handler.Footer.DiscordButton.TextButton.MouseButton1Click:Connect(onDiscordClicked)
+
+	local function onToggleMethod()
+		Verification._activeMethod = Verification._activeMethod == "Key" and "Token" or "Key"
+		toggleBtn.Text = Verification._activeMethod == "Token" and "Use Key" or "Sign In"
+		box.PlaceholderText = Verification._activeMethod == "Token" and "Token" or "Key"
+		box.Text = ""
+		setFillColor(COLORS.neutral)
+	end
+
+	Storage.Connections.ToggleMethodButton = toggleBtn.MouseButton1Click:Connect(onToggleMethod)
+
+	local submitted = false
+	local function onSubmitPressed()
+		if submitted or box.Text == "" then return end
+
+		Verification._lastInput = box.Text
+
+		if Verification._activeMethod == "Key" then
+			Verification._isAuthenticated = Verification._lastInput == Verification._secretKey
+			if not Verification._isAuthenticated then return end
+			submitted = true
+
+			if Verification._onSubmit then
+				Verification._onSubmit()
+			end
+
+			Verification:Close()
+
+		elseif Verification._activeMethod == "Token" then
+			Verification._isAuthenticated = false
+
+			if Verification._onSubmit then
+				Verification._onSubmit()
+			end
+		end
+	end
+
+	Storage.Connections.SubmitButton = inputField.SubmitButton.MouseButton1Click:Connect(onSubmitPressed)
+
+	Storage.Connections.InputFocused = box.Focused:Connect(function()
+		TS:Create(activeFill, Tinfo2, {Size = COLORS.expanded}):Play()
+	end)
+
+	Storage.Connections.InputFocusLost = box.FocusLost:Connect(function(enterPressed)
+		if box.Text == "" then
+			TS:Create(activeFill, Tinfo2, {Size = COLORS.collapsed}):Play()
+		end
+		if enterPressed then
+			onSubmitPressed()
+		end
+	end)
+
+	Storage.Connections.InputChanged = box:GetPropertyChangedSignal("Text"):Connect(function()
+		if Verification._activeMethod == "Token" then return end
+		local text = box.Text
+		if text == Verification._secretKey then
+			setFillColor(COLORS.correct)
+		elseif text ~= "" then
+			setFillColor(COLORS.incorrect)
+		else
+			setFillColor(COLORS.neutral)
+		end
+	end)
+
+	return Verification
 end
 
 ScreenGui.Parent = VG
