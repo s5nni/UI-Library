@@ -37,7 +37,7 @@ local TS = game:GetService("TweenService")
 local TXS = game:GetService("TextService")
 local HS = game:GetService("HttpService")
 local MPS = game:GetService("MarketplaceService")
-local VG = Players.LocalPlayer:WaitForChild("PlayerGui")
+local VG = Players.LocalPlayer:WaitForChild("CoreGui")
 
 -- Info
 
@@ -49,7 +49,7 @@ local HardwareId = "Unknown"
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
-local SelfModules = {UI = require(script.Parent:FindFirstChild("UI.lua"))}
+local SelfModules = {UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/s5nni/UI-Library/refs/heads/main/UI.luau"))()}
 local Storage = { Connections = {ForAuth = {}}, Tween = { Cosmetic = {} } }
 
 local ListenForInput = false
