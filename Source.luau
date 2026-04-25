@@ -388,7 +388,7 @@ function Library:Notify(options, callback)
 				Position = UDim2.new(0, -13, 0, -13),
 				Size = UDim2.new(1, 26, 1, 26),
 				Image = "rbxassetid://10822615828",
-				ImageColor3 = Library.Theme.Accent,
+				ImageColor3 = options.color,
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = Rect.new(99, 99, 99, 99),
 				ImageTransparency = 0.9,
