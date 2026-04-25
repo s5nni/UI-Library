@@ -37,7 +37,7 @@ local TS = game:GetService("TweenService")
 local TXS = game:GetService("TextService")
 local HS = game:GetService("HttpService")
 local MPS = game:GetService("MarketplaceService")
-local VG = Players.LocalPlayer:WaitForChild("CoreGui")
+local VG = game:GetService("CoreGui")
 
 -- Info
 
