@@ -37,7 +37,7 @@ local TS = game:GetService("TweenService")
 local TXS = game:GetService("TextService")
 local HS = game:GetService("HttpService")
 local MPS = game:GetService("MarketplaceService")
-local VG = game:GetService("CoreGui")
+local VG = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 -- Info
 
@@ -1998,12 +1998,14 @@ function Library:AddWindow(options)
 							Position = UDim2.new(0.5, 0, 0, 25),
 							Size = UDim2.new(1, -8, 1, -30),
 							AnchorPoint = Vector2.new(0.5, 0),
+							ClipsDescendants = true,
 
 							SelfModules.UI.Create("Frame", {
 								Name = "Holder",
 								BackgroundColor3 = Library.Theme.SectionColor,
 								Position = UDim2.new(0, 1, 0, 1),
 								Size = UDim2.new(1, -2, 1, -2),
+								ClipsDescendants = true,
 
 								SelfModules.UI.Create("Frame", {
 									Name = "List",
@@ -2186,14 +2188,15 @@ function Library:AddWindow(options)
 					Excluded = {},
 					List     = {},
 					Callback = callback,
+					Style    = options and options.style or "numeric", -- NEW
 				}
 
 				local ITEM_HEIGHT  = 32
 				local ITEM_GAP     = 4
 				local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
-				local HAS_EXCLUDE  = options and options.exclude == true
+				local HAS_EXCLUDE  = options and options.exclude or false -- CHANGED (your fix)
 				local DIVIDER_KEY  = "__DIVIDER__"
-				
+
 				local unified      = {}
 				local frameMap     = {}
 				local dividerFrame = nil
@@ -2238,11 +2241,16 @@ function Library:AddWindow(options)
 							local f = frameMap[v]
 							if f then
 								if activeNum then
-									f.Holder.Num.Text = tostring(activeNum)
+									-- NEW: style-aware display
+									if Ranker.Style == "plus" then
+										f.Holder.Num.Text = "+"
+									else
+										f.Holder.Num.Text = tostring(activeNum)
+									end
 									f.Holder.Num.TextColor3 = Library.Theme.Accent
 									activeNum = activeNum + 1
 								else
-									f.Holder.Num.Text = "—"
+									f.Holder.Num.Text = "-"
 									f.Holder.Num.TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55))
 								end
 							end
@@ -2262,7 +2270,7 @@ function Library:AddWindow(options)
 				end
 
 				Ranker.Frame = SelfModules.UI.Create("Frame", {
-					Name = "Ranker",
+					Name = name,
 					BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(15, 15, 15)),
 					Size = UDim2.new(1, 2, 0, 42),
 					ClipsDescendants = true,
@@ -2333,7 +2341,6 @@ function Library:AddWindow(options)
 					}, UDim.new(0, 5)),
 				}, UDim.new(0, 5))
 
-				-- Divider frame: just a slot like any other, not draggable
 				if HAS_EXCLUDE then
 					dividerFrame = SelfModules.UI.Create("Frame", {
 						Name = DIVIDER_KEY,
@@ -2354,10 +2361,10 @@ function Library:AddWindow(options)
 							Name = "Label",
 							BackgroundTransparency = 1,
 							Size = UDim2.new(1, 0, 1, 0),
-							Font = Enum.Font.SourceSans,
-							Text = "not in use",
+							Font = Enum.Font.SourceSansBold,
+							Text = "Excluded",
 							TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55)),
-							TextSize = 11,
+							TextSize = 13,
 						}),
 
 						SelfModules.UI.Create("Frame", {
@@ -2370,10 +2377,9 @@ function Library:AddWindow(options)
 						}),
 					})
 					dividerFrame.Parent = Ranker.Frame.Holder.List
-					unified[1] = DIVIDER_KEY -- divider starts at top, items added below it
+					unified[1] = DIVIDER_KEY
 				end
 
-				-- Height
 				function Ranker:GetHeight()
 					if not Ranker.Toggled then return 42 end
 					return 42 + totalListH() + 8
@@ -2397,24 +2403,20 @@ function Library:AddWindow(options)
 					tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
 				end
 
-				-- Drag state
 				local dragging    = nil
 				local dragFrame   = nil
 				local dragOffsetY = 0
 
-				-- Add
 				function Ranker:Add(itemName, excluded)
 					local Item = { Name = itemName }
 
 					local insertAt
 					if HAS_EXCLUDE then
 						if excluded then
-							-- below divider at end
 							insertAt = #unified + 1
 						else
-							-- above divider
 							local di = table.find(unified, DIVIDER_KEY)
-							insertAt = di -- inserts before divider
+							insertAt = di
 						end
 					else
 						insertAt = #unified + 1
@@ -2526,7 +2528,16 @@ function Library:AddWindow(options)
 				function Ranker:GetOrder()    return Ranker.Order    end
 				function Ranker:GetExcluded() return Ranker.Excluded end
 
-				-- Drag move
+				-- NEW: SortStyle method
+				function Ranker:SortStyle(style)
+					self.Style = style or "numeric"
+					refreshNumbers()
+				end
+				
+				function Ranker:GetStyle()
+					return self.Style
+				end
+
 				UIS.InputChanged:Connect(function(input)
 					if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
 					if not dragging or not dragFrame then return end
@@ -2538,11 +2549,9 @@ function Library:AddWindow(options)
 
 					dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
 
-					-- which slot is the center of the dragged frame hovering over
 					local centerY    = clampedY + ITEM_HEIGHT / 2
 					local targetSlot = math.clamp(math.round(centerY / ITEM_STRIDE) + 1, 1, #unified)
 
-					-- never allow dropping ON the divider slot, push past it
 					if HAS_EXCLUDE and unified[targetSlot] == DIVIDER_KEY then
 						local currentSlot = table.find(unified, dragging)
 						targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
@@ -2559,7 +2568,6 @@ function Library:AddWindow(options)
 					end
 				end)
 
-				-- Release: snap
 				UIS.InputEnded:Connect(function(input)
 					if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 					if not dragging or not dragFrame then return end
@@ -4710,12 +4718,14 @@ function Library:AddWindow(options)
 								Position = UDim2.new(0.5, 0, 0, 25),
 								Size = UDim2.new(1, -8, 1, -30),
 								AnchorPoint = Vector2.new(0.5, 0),
+								ClipsDescendants = true,
 
 								SelfModules.UI.Create("Frame", {
 									Name = "Holder",
 									BackgroundColor3 = Library.Theme.SectionColor,
 									Position = UDim2.new(0, 1, 0, 1),
 									Size = UDim2.new(1, -2, 1, -2),
+									ClipsDescendants = true,
 
 									SelfModules.UI.Create("Frame", {
 										Name = "List",
@@ -4898,12 +4908,13 @@ function Library:AddWindow(options)
 						Excluded = {},
 						List     = {},
 						Callback = callback,
+						Style    = options and options.style or "numeric",
 					}
 
 					local ITEM_HEIGHT  = 32
 					local ITEM_GAP     = 4
 					local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
-					local HAS_EXCLUDE  = options and options.exclude == true
+					local HAS_EXCLUDE  = options and options.exclude or false
 					local DIVIDER_KEY  = "__DIVIDER__"
 
 					local unified      = {}
@@ -4950,11 +4961,16 @@ function Library:AddWindow(options)
 								local f = frameMap[v]
 								if f then
 									if activeNum then
-										f.Holder.Num.Text = tostring(activeNum)
+										-- NEW: style-aware display
+										if Ranker.Style == "plus" then
+											f.Holder.Num.Text = "+"
+										else
+											f.Holder.Num.Text = tostring(activeNum)
+										end
 										f.Holder.Num.TextColor3 = Library.Theme.Accent
 										activeNum = activeNum + 1
 									else
-										f.Holder.Num.Text = "—"
+										f.Holder.Num.Text = "-"
 										f.Holder.Num.TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55))
 									end
 								end
@@ -4974,7 +4990,7 @@ function Library:AddWindow(options)
 					end
 
 					Ranker.Frame = SelfModules.UI.Create("Frame", {
-						Name = "Ranker",
+						Name = name,
 						BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(20, 20, 20)),
 						Size = UDim2.new(1, 2, 0, 42),
 						ClipsDescendants = true,
@@ -5045,7 +5061,6 @@ function Library:AddWindow(options)
 						}, UDim.new(0, 5)),
 					}, UDim.new(0, 5))
 
-					-- Divider frame: just a slot like any other, not draggable
 					if HAS_EXCLUDE then
 						dividerFrame = SelfModules.UI.Create("Frame", {
 							Name = DIVIDER_KEY,
@@ -5066,10 +5081,10 @@ function Library:AddWindow(options)
 								Name = "Label",
 								BackgroundTransparency = 1,
 								Size = UDim2.new(1, 0, 1, 0),
-								Font = Enum.Font.SourceSans,
-								Text = "not in use",
+								Font = Enum.Font.SourceSansBold,
+								Text = "Excluded",
 								TextColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(55, 55, 55)),
-								TextSize = 11,
+								TextSize = 13,
 							}),
 
 							SelfModules.UI.Create("Frame", {
@@ -5082,10 +5097,9 @@ function Library:AddWindow(options)
 							}),
 						})
 						dividerFrame.Parent = Ranker.Frame.Holder.List
-						unified[1] = DIVIDER_KEY -- divider starts at top, items added below it
+						unified[1] = DIVIDER_KEY
 					end
 
-					-- Height
 					function Ranker:GetHeight()
 						if not Ranker.Toggled then return 42 end
 						return 42 + totalListH() + 8
@@ -5097,38 +5111,33 @@ function Library:AddWindow(options)
 						if Ranker.Toggled then
 							Ranker.Frame.Size = UDim2.new(1, 2, 0, Ranker:GetHeight())
 							SubSection:UpdateHeight()
-							Section:UpdateHeight()
 						end
 					end
-					
+
 					function Ranker:Toggle(bool)
 						Ranker.Toggled = bool
 						Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
 						tween(Ranker.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Ranker:GetHeight()) })
 						tween(Ranker.Frame.Holder.Holder.Indicator, 0.5, { Rotation = bool and 90 or 0 })
-						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, SubSection.Frame.Size.X.Offset, 0, SubSection:GetHeight()) })
-						tween(Section.Frame, 0.5, { Size = UDim2.new(1, -8, 0, Section:GetHeight()) })
+						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Section:GetHeight()) })
+						tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
 						tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
 					end
 
-					-- Drag state
 					local dragging    = nil
 					local dragFrame   = nil
 					local dragOffsetY = 0
 
-					-- Add
 					function Ranker:Add(itemName, excluded)
 						local Item = { Name = itemName }
 
 						local insertAt
 						if HAS_EXCLUDE then
 							if excluded then
-								-- below divider at end
 								insertAt = #unified + 1
 							else
-								-- above divider
 								local di = table.find(unified, DIVIDER_KEY)
-								insertAt = di -- inserts before divider
+								insertAt = di
 							end
 						else
 							insertAt = #unified + 1
@@ -5240,7 +5249,16 @@ function Library:AddWindow(options)
 					function Ranker:GetOrder()    return Ranker.Order    end
 					function Ranker:GetExcluded() return Ranker.Excluded end
 
-					-- Drag move
+					-- NEW: SortStyle method
+					function Ranker:SortStyle(style)
+						self.Style = style or "numeric"
+						refreshNumbers()
+					end
+					
+					function Ranker:GetStyle()
+						return self.Style
+					end
+
 					UIS.InputChanged:Connect(function(input)
 						if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
 						if not dragging or not dragFrame then return end
@@ -5252,11 +5270,9 @@ function Library:AddWindow(options)
 
 						dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
 
-						-- which slot is the center of the dragged frame hovering over
 						local centerY    = clampedY + ITEM_HEIGHT / 2
 						local targetSlot = math.clamp(math.round(centerY / ITEM_STRIDE) + 1, 1, #unified)
 
-						-- never allow dropping ON the divider slot, push past it
 						if HAS_EXCLUDE and unified[targetSlot] == DIVIDER_KEY then
 							local currentSlot = table.find(unified, dragging)
 							targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
@@ -5273,7 +5289,6 @@ function Library:AddWindow(options)
 						end
 					end)
 
-					-- Release: snap
 					UIS.InputEnded:Connect(function(input)
 						if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 						if not dragging or not dragFrame then return end
