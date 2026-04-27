@@ -5227,7 +5227,7 @@ function Library:AddWindow(options)
 						Ranker.Frame.Holder.List.Size = UDim2.new(1, -10, 0, totalListH())
 						tween(Ranker.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Ranker:GetHeight()) })
 						tween(Ranker.Frame.Holder.Holder.Indicator, 0.5, { Rotation = bool and 90 or 0 })
-						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, 2, 0, Section:GetHeight()) })
+						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, 2, 0, SubSection:GetHeight()) })
 						tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
 						tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
 					end
