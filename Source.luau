@@ -505,6 +505,7 @@ function Library:AddWindow(options)
 		fullscreenKey = options.fullscreenKey or Enum.KeyCode.RightAlt,
 		Toggled = options.default ~= false,
 		Acrylic = nil,
+		Transparency = options.transparency or 0.5,
 	}
 
 	-- Custom theme setup
@@ -1209,7 +1210,7 @@ function Library:AddWindow(options)
 			-- removed wait() to animate all simultaneously
 		end
 	end
-
+	
 	local function loadup()
 		local Sound = Instance.new("Sound", game:GetService("SoundService"))
 		Sound.PlayOnRemove = true
@@ -1342,7 +1343,10 @@ function Library:AddWindow(options)
 				targetPos = self.WindowedPosition + UDim2.new(0, 5, 0, 5)
 			end
 
-			SelfModules.UI.MakeDraggable(self.Frame, self.Frame.Topbar, 0.0975, false)
+			SelfModules.UI.MakeDraggable(self.Frame, self.Frame.Topbar, 0.0975, function(bool)
+				if not self.Toggled then return end
+				TS:Create(self.Frame, TweenInfo.new(0.25, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { GroupTransparency = bool and Window.Transparency or bool and 0.5 or 0 }):Play()
+			end)
 		end
 
 		tween(self.Frame.Topbar.Konata, 0.3, {
@@ -1356,7 +1360,10 @@ function Library:AddWindow(options)
 	end
 
 	Storage.Connections[Window] = {}
-	SelfModules.UI.MakeDraggable(Window.Frame, Window.Frame.Topbar, 0.0975)
+	SelfModules.UI.MakeDraggable(Window.Frame, Window.Frame.Topbar, 0.0975, function(bool)
+		if not Window.Toggled then return end
+		TS:Create(Window.Frame, TweenInfo.new(0.25, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { GroupTransparency = bool and Window.Transparency or bool and 0.5 or 0 }):Play()
+	end)
 	Window.Sidebar.Frame = Window.Frame.Sidebar
 	Window.Frame.Parent = ScreenGui
 
@@ -1385,7 +1392,46 @@ function Library:AddWindow(options)
 			toggleSidebar(not Window.Sidebar.Toggled)
 		end
 	end)
-
+	
+	-- Load up effect
+	local BackgroundHandler = SelfModules.UI.Create("Frame", {
+		Name = "BackgroundHandler",
+		ZIndex = 100,
+		BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.SectionColor, Color3.fromRGB(5, 5, 5)),
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		
+		SelfModules.UI.Create("UIStroke", {
+			Thickness = 1.5,
+			Color = SelfModules.UI.Color.Add(Library.Theme.TopbarColor, Color3.fromRGB(15, 15, 15)),
+		}),
+	}, UDim.new(0, 5))
+	BackgroundHandler.Parent = Window.Frame
+	
+	Window.Frame.GroupTransparency = 1
+	Window.Frame.Rotation = math.random(-45, 45)
+	Window.Frame.Position = UDim2.new(0.5, -Window.Frame.Size.X.Offset/2, 1.5, -Window.Frame.Size.Y.Offset/2)
+	local LoadingTween = TS:Create(Window.Frame, TweenInfo.new(1, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Rotation = 0, GroupTransparency = 0, Position = UDim2.new(0.5, -Window.Frame.Size.X.Offset/2, 0.5, -Window.Frame.Size.Y.Offset/2) })
+	LoadingTween:Play()
+	local LoadingTweenConnection
+	LoadingTweenConnection = LoadingTween.Completed:Connect(function()
+		LoadingTweenConnection:Disconnect()
+		LoadingTweenConnection = nil
+		TS:Create(BackgroundHandler.UICorner, TweenInfo.new(1, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {CornerRadius = UDim.new(1, 0)}):Play()
+		TS:Create(BackgroundHandler.UIStroke, TweenInfo.new(3, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {Transparency = 1}):Play()
+		TS:Create(BackgroundHandler, TweenInfo.new(2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 1.5, 0)}):Play()
+		local LoadingTweenConnection2
+		local LoadingTween2
+		LoadingTween2 = TS:Create(BackgroundHandler, TweenInfo.new(3, Enum.EasingStyle.Back, Enum.EasingDirection.InOut), {Position = UDim2.new(0.5, 0, 1.5, 0)})
+		LoadingTween2:Play()
+		LoadingTweenConnection2 = LoadingTween2.Completed:Connect(function()
+			LoadingTweenConnection2:Disconnect()
+			LoadingTweenConnection2 = nil
+			BackgroundHandler:Destroy()
+		end)
+	end)
+	
 	-- Tab
 	function Window:AddTab(name, options)
 		options = options or {}
@@ -1623,7 +1669,9 @@ function Library:AddWindow(options)
 				local height = 40
 				if Section.Toggled then
 					for i, v in next, self.List do
-						height = height + (v.GetHeight and v:GetHeight() or v.Frame.AbsoluteSize.Y) + 5
+						if v.Frame.Visible then
+							height = height + (v.GetHeight and v:GetHeight() or v.Frame.AbsoluteSize.Y) + 5
+						end
 					end
 				end
 				return height
@@ -1657,7 +1705,7 @@ function Library:AddWindow(options)
 					toggleSection(not Section.Toggled)
 				end
 			end)
-
+			
 			-- Terminal
 			function Section:AddTerminal(name, options, callback)
 				local Terminal = {
@@ -1705,58 +1753,101 @@ function Library:AddWindow(options)
 								BackgroundColor3 = Library.Theme.SectionColor,
 								Position = UDim2.new(0, 1, 0, 1),
 								Size = UDim2.new(1, -2, 1, -2),
-
-								SelfModules.UI.Create("Frame", {
-									Name = "List",
-									BackgroundTransparency = 1,
-									Size = UDim2.new(1, 0, 1, 0),
-									ClipsDescendants = true,
-
-									SelfModules.UI.Create("UIListLayout", {
-										FillDirection = Enum.FillDirection.Vertical,
-										SortOrder = Enum.SortOrder.LayoutOrder,
-										HorizontalAlignment = Enum.HorizontalAlignment.Left,
-										VerticalAlignment = Enum.VerticalAlignment.Top,
-									}),
-
-									SelfModules.UI.Create("UIPadding", {
-										PaddingLeft = UDim.new(0, 4),
-										PaddingRight = UDim.new(0, 4),
-										PaddingTop = UDim.new(0, 2),
-										PaddingBottom = UDim.new(0, 2),
-									}),
-								}),
+								ClipsDescendants = true,
 							}, UDim.new(0, 5)),
 						}, UDim.new(0, 5)),
 					}, UDim.new(0, 5)),
 				}, UDim.new(0, 5))
 
+				-- Build List (scrollable or static)
+				local Holder = Terminal.Frame.Holder.Field.Holder
+
+				if Terminal.Options.scrollable == true then
+					local List = SelfModules.UI.Create("ScrollingFrame", {
+						Name = "List",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(1, -6, 1, -3),
+						Position = UDim2.new(0.5, 0, 0.5, 0),
+						CanvasSize = UDim2.new(0, 0, 0, 0),
+						ClipsDescendants = false,
+						ScrollBarImageColor3 = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(25, 25, 25)),
+						ScrollBarThickness = 5,
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						BorderSizePixel = 0,
+
+						SelfModules.UI.Create("UIListLayout", {
+							FillDirection = Enum.FillDirection.Vertical,
+							SortOrder = Enum.SortOrder.LayoutOrder,
+							HorizontalAlignment = Enum.HorizontalAlignment.Left,
+							VerticalAlignment = Enum.VerticalAlignment.Top,
+						}),
+
+						SelfModules.UI.Create("UIPadding", {
+							PaddingLeft = UDim.new(0, 4),
+							PaddingRight = UDim.new(0, 4),
+							PaddingTop = UDim.new(0, 2),
+							PaddingBottom = UDim.new(0, 2),
+						}),
+					})
+					List.Parent = Holder
+				else
+					local List = SelfModules.UI.Create("Frame", {
+						Name = "List",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(1, 0, 1, 0),
+						ClipsDescendants = true,
+
+						SelfModules.UI.Create("UIListLayout", {
+							FillDirection = Enum.FillDirection.Vertical,
+							SortOrder = Enum.SortOrder.LayoutOrder,
+							HorizontalAlignment = Enum.HorizontalAlignment.Left,
+							VerticalAlignment = Enum.VerticalAlignment.Top,
+						}),
+
+						SelfModules.UI.Create("UIPadding", {
+							PaddingLeft = UDim.new(0, 4),
+							PaddingRight = UDim.new(0, 4),
+							PaddingTop = UDim.new(0, 2),
+							PaddingBottom = UDim.new(0, 2),
+						}),
+					})
+					List.Parent = Holder
+				end
+
 				-- References
-				local List = Terminal.Frame.Holder.Field.Holder.List
+				local List = Holder.List
 				local Layout = List.UIListLayout
+
+				-- Auto canvas resize for scrollable mode
+				if Terminal.Options.scrollable == true then
+					Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+						List.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 4)
+						List.CanvasPosition = Vector2.new(0, math.max(0, Layout.AbsoluteContentSize.Y - List.AbsoluteSize.Y))
+					end)
+				end
 
 				-- Colors
 				local MessageColors = {
-					Print = Color3.fromRGB(255, 255, 255),
-					Warn = Color3.fromRGB(255, 170, 0),
-					Feed = Color3.fromRGB(125, 180, 255),
-					Error = Color3.fromRGB(255, 80, 80),
+					Print   = Color3.fromRGB(255, 255, 255),
+					Warn    = Color3.fromRGB(255, 170, 0),
+					Feed    = Color3.fromRGB(125, 180, 255),
+					Error   = Color3.fromRGB(255, 80, 80),
 					Success = Color3.fromRGB(85, 255, 0),
-					Info = Color3.fromRGB(120, 200, 255),
-					Debug = Color3.fromRGB(170, 170, 170),
-					System = Color3.fromRGB(180, 140, 255),
+					Info    = Color3.fromRGB(120, 200, 255),
+					Debug   = Color3.fromRGB(170, 170, 170),
+					System  = Color3.fromRGB(180, 140, 255),
 					Command = Color3.fromRGB(255, 255, 120),
-					Input = Color3.fromRGB(255, 220, 180),
-					Output = Color3.fromRGB(180, 255, 255),
-					Critical = Color3.fromRGB(255, 40, 40),
-					Trace = Color3.fromRGB(120, 120, 120),
+					Input   = Color3.fromRGB(255, 220, 180),
+					Output  = Color3.fromRGB(180, 255, 255),
+					Critical= Color3.fromRGB(255, 40, 40),
+					Trace   = Color3.fromRGB(120, 120, 120),
 					Network = Color3.fromRGB(100, 180, 255),
-					Security = Color3.fromRGB(255, 80, 180),
-					Memory = Color3.fromRGB(255, 120, 120),
-					File = Color3.fromRGB(200, 255, 150),
-					Event = Color3.fromRGB(255, 180, 255),
+					Security= Color3.fromRGB(255, 80, 180),
+					Memory  = Color3.fromRGB(255, 120, 120),
+					File    = Color3.fromRGB(200, 255, 150),
+					Event   = Color3.fromRGB(255, 180, 255),
 					Loading = Color3.fromRGB(255, 220, 100),
-					Hidden = Color3.fromRGB(90, 90, 90),
+					Hidden  = Color3.fromRGB(90, 90, 90),
 				}
 
 				-- Callback Helper
@@ -1768,39 +1859,31 @@ function Library:AddWindow(options)
 					end
 				end
 
-				-- Bounds Check
+				-- Bounds Check (only used in non-scrollable mode)
 				local function isOutOfBounds(guiObject)
 					local objectBottom = guiObject.AbsolutePosition.Y + guiObject.AbsoluteSize.Y
 					local containerBottom = List.AbsolutePosition.Y + List.AbsoluteSize.Y
-
 					return objectBottom > containerBottom
 				end
 
-				-- Remove Oldest
+				-- Remove Oldest (only used in non-scrollable mode)
 				local function removeOldest()
 					local labels = {}
-
 					for _, child in ipairs(List:GetChildren()) do
 						if child:IsA("TextLabel") or child:IsA("TextBox") then
 							table.insert(labels, child)
 						end
 					end
-
-					if #labels == 0 then
-						return
-					end
-
+					if #labels == 0 then return end
 					table.sort(labels, function(a, b)
 						return a.LayoutOrder < b.LayoutOrder
 					end)
-
 					local oldest = labels[1]
-
 					fireCallback("Remove", oldest)
 					oldest:Destroy()
 				end
 
-				-- Overflow Check
+				-- Overflow Check (only used in non-scrollable mode)
 				local function checkOverflow()
 					for _, child in ipairs(List:GetChildren()) do
 						if (child:IsA("TextLabel") or child:IsA("TextBox")) and isOutOfBounds(child) then
@@ -1815,7 +1898,7 @@ function Library:AddWindow(options)
 
 				function Terminal:Add(text, config)
 					config = config or {}
-					
+
 					local Sound = Instance.new("Sound")
 					Sound.SoundId = "rbxassetid://140207837688369"
 					Sound.Volume = 0.01
@@ -1862,7 +1945,6 @@ function Library:AddWindow(options)
 							TextYAlignment = baseProperties.TextYAlignment,
 							TextColor3 = baseProperties.TextColor3,
 							LayoutOrder = baseProperties.LayoutOrder,
-
 							ClearTextOnFocus = false,
 							MultiLine = wrapped,
 							TextEditable = false,
@@ -1877,12 +1959,10 @@ function Library:AddWindow(options)
 							Text = "",
 							ZIndex = (Object.ZIndex or 1) + 1,
 						})
-
 						ClickDetector.Parent = Object
 
 						ClickDetector.MouseButton1Click:Connect(function()
 							Object:CaptureFocus()
-
 							task.defer(function()
 								if Object.Parent then
 									Object.CursorPosition = #Object.Text + 1
@@ -1895,21 +1975,18 @@ function Library:AddWindow(options)
 					end
 
 					Object.Parent = List
-
 					table.insert(Terminal.List, Object)
-
 					fireCallback("Add", Object)
 
-					task.defer(checkOverflow)
+					if Terminal.Options.scrollable ~= true then
+						task.defer(checkOverflow)
+					end
 
 					return Object
 				end
 
 				function Terminal:Remove(object)
-					if not object then
-						return
-					end
-
+					if not object then return end
 					if object.Parent == List then
 						fireCallback("Remove", object)
 						object:Destroy()
@@ -1923,32 +2000,27 @@ function Library:AddWindow(options)
 							child:Destroy()
 						end
 					end
-
 					Terminal.List = {}
 					Terminal.CurrentLayoutOrder = 0
 				end
 
 				function Terminal:GetChildren()
 					local objects = {}
-
 					for _, child in ipairs(List:GetChildren()) do
 						if child:IsA("TextLabel") or child:IsA("TextBox") then
 							table.insert(objects, child)
 						end
 					end
-
 					return objects
 				end
 
 				function Terminal:GetCount()
 					local count = 0
-
 					for _, child in ipairs(List:GetChildren()) do
 						if child:IsA("TextLabel") or child:IsA("TextBox") then
 							count += 1
 						end
 					end
-
 					return count
 				end
 
@@ -3022,16 +3094,20 @@ function Library:AddWindow(options)
 					return Box.Frame.Holder.Label.Text
 				end
 				function Box:SetText(text)
-					Box.Frame.Holder.TextBox.Text = text
+					Box.Frame.Holder.TextBox.Box.Text = text
 				end
 				function Box:GetText()
-					return Box.Frame.Holder.TextBox.Text
+					return Box.Frame.Holder.TextBox.Box.Text
 				end
 				function Box:SetExtend(number)
 					options.extend = number
 				end
 				function Box:GetExtend()
 					return math.abs(options.extend)
+				end
+				function Box:Clear()
+					Box.Frame.Holder.TextBox.Box.Text = ""
+					extendBox(false)
 				end
 
 				Section.List[#Section.List + 1] = Box
@@ -3050,6 +3126,11 @@ function Library:AddWindow(options)
 						return
 					end
 					extendBox(false)
+					pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
+				end)
+				Box.Frame.Holder.TextBox.Holder.Box:GetPropertyChangedSignal("Text"):Connect(function()
+					if options.fireonchange ~= true then return end
+					if Box.Frame.Holder.TextBox.Holder.Box.Text == "" and options.fireonempty ~= true then return end
 					pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
 				end)
 				return Box
@@ -4358,7 +4439,9 @@ function Library:AddWindow(options)
 					local height = 42
 					if SubSection.Toggled then
 						for i, v in next, self.List do
-							height = height + (v.GetHeight and v:GetHeight() or v.Frame.AbsoluteSize.Y) + 5
+							if v.Frame.Visible then
+								height = height + (v.GetHeight and v:GetHeight() or v.Frame.AbsoluteSize.Y) + 6
+							end
 						end
 					end
 					return height
@@ -4426,58 +4509,101 @@ function Library:AddWindow(options)
 									BackgroundColor3 = Library.Theme.SectionColor,
 									Position = UDim2.new(0, 1, 0, 1),
 									Size = UDim2.new(1, -2, 1, -2),
-
-									SelfModules.UI.Create("Frame", {
-										Name = "List",
-										BackgroundTransparency = 1,
-										Size = UDim2.new(1, 0, 1, 0),
-										ClipsDescendants = true,
-
-										SelfModules.UI.Create("UIListLayout", {
-											FillDirection = Enum.FillDirection.Vertical,
-											SortOrder = Enum.SortOrder.LayoutOrder,
-											HorizontalAlignment = Enum.HorizontalAlignment.Left,
-											VerticalAlignment = Enum.VerticalAlignment.Top,
-										}),
-
-										SelfModules.UI.Create("UIPadding", {
-											PaddingLeft = UDim.new(0, 4),
-											PaddingRight = UDim.new(0, 4),
-											PaddingTop = UDim.new(0, 2),
-											PaddingBottom = UDim.new(0, 2),
-										}),
-									}),
+									ClipsDescendants = true,
 								}, UDim.new(0, 5)),
 							}, UDim.new(0, 5)),
 						}, UDim.new(0, 5)),
 					}, UDim.new(0, 5))
 
+					-- Build List (scrollable or static)
+					local Holder = Terminal.Frame.Holder.Field.Holder
+
+					if Terminal.Options.scrollable == true then
+						local List = SelfModules.UI.Create("ScrollingFrame", {
+							Name = "List",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, -6, 1, -3),
+							Position = UDim2.new(0.5, 0, 0.5, 0),
+							CanvasSize = UDim2.new(0, 0, 0, 0),
+							ClipsDescendants = false,
+							ScrollBarImageColor3 = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(25, 25, 25)),
+							ScrollBarThickness = 5,
+							AnchorPoint = Vector2.new(0.5, 0.5),
+							BorderSizePixel = 0,
+
+							SelfModules.UI.Create("UIListLayout", {
+								FillDirection = Enum.FillDirection.Vertical,
+								SortOrder = Enum.SortOrder.LayoutOrder,
+								HorizontalAlignment = Enum.HorizontalAlignment.Left,
+								VerticalAlignment = Enum.VerticalAlignment.Top,
+							}),
+
+							SelfModules.UI.Create("UIPadding", {
+								PaddingLeft = UDim.new(0, 4),
+								PaddingRight = UDim.new(0, 4),
+								PaddingTop = UDim.new(0, 2),
+								PaddingBottom = UDim.new(0, 2),
+							}),
+						})
+						List.Parent = Holder
+					else
+						local List = SelfModules.UI.Create("Frame", {
+							Name = "List",
+							BackgroundTransparency = 1,
+							Size = UDim2.new(1, 0, 1, 0),
+							ClipsDescendants = true,
+
+							SelfModules.UI.Create("UIListLayout", {
+								FillDirection = Enum.FillDirection.Vertical,
+								SortOrder = Enum.SortOrder.LayoutOrder,
+								HorizontalAlignment = Enum.HorizontalAlignment.Left,
+								VerticalAlignment = Enum.VerticalAlignment.Top,
+							}),
+
+							SelfModules.UI.Create("UIPadding", {
+								PaddingLeft = UDim.new(0, 4),
+								PaddingRight = UDim.new(0, 4),
+								PaddingTop = UDim.new(0, 2),
+								PaddingBottom = UDim.new(0, 2),
+							}),
+						})
+						List.Parent = Holder
+					end
+
 					-- References
-					local List = Terminal.Frame.Holder.Field.Holder.List
+					local List = Holder.List
 					local Layout = List.UIListLayout
+
+					-- Auto canvas resize for scrollable mode
+					if Terminal.Options.scrollable == true then
+						Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+							List.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 4)
+							List.CanvasPosition = Vector2.new(0, math.max(0, Layout.AbsoluteContentSize.Y - List.AbsoluteSize.Y))
+						end)
+					end
 
 					-- Colors
 					local MessageColors = {
-						Print = Color3.fromRGB(255, 255, 255),
-						Warn = Color3.fromRGB(255, 170, 0),
-						Feed = Color3.fromRGB(125, 180, 255),
-						Error = Color3.fromRGB(255, 80, 80),
-						Success = Color3.fromRGB(85, 255, 0),
-						Info = Color3.fromRGB(120, 200, 255),
-						Debug = Color3.fromRGB(170, 170, 170),
-						System = Color3.fromRGB(180, 140, 255),
-						Command = Color3.fromRGB(255, 255, 120),
-						Input = Color3.fromRGB(255, 220, 180),
-						Output = Color3.fromRGB(180, 255, 255),
+						Print    = Color3.fromRGB(255, 255, 255),
+						Warn     = Color3.fromRGB(255, 170, 0),
+						Feed     = Color3.fromRGB(125, 180, 255),
+						Error    = Color3.fromRGB(255, 80, 80),
+						Success  = Color3.fromRGB(85, 255, 0),
+						Info     = Color3.fromRGB(120, 200, 255),
+						Debug    = Color3.fromRGB(170, 170, 170),
+						System   = Color3.fromRGB(180, 140, 255),
+						Command  = Color3.fromRGB(255, 255, 120),
+						Input    = Color3.fromRGB(255, 220, 180),
+						Output   = Color3.fromRGB(180, 255, 255),
 						Critical = Color3.fromRGB(255, 40, 40),
-						Trace = Color3.fromRGB(120, 120, 120),
-						Network = Color3.fromRGB(100, 180, 255),
+						Trace    = Color3.fromRGB(120, 120, 120),
+						Network  = Color3.fromRGB(100, 180, 255),
 						Security = Color3.fromRGB(255, 80, 180),
-						Memory = Color3.fromRGB(255, 120, 120),
-						File = Color3.fromRGB(200, 255, 150),
-						Event = Color3.fromRGB(255, 180, 255),
-						Loading = Color3.fromRGB(255, 220, 100),
-						Hidden = Color3.fromRGB(90, 90, 90),
+						Memory   = Color3.fromRGB(255, 120, 120),
+						File     = Color3.fromRGB(200, 255, 150),
+						Event    = Color3.fromRGB(255, 180, 255),
+						Loading  = Color3.fromRGB(255, 220, 100),
+						Hidden   = Color3.fromRGB(90, 90, 90),
 					}
 
 					-- Callback Helper
@@ -4489,39 +4615,31 @@ function Library:AddWindow(options)
 						end
 					end
 
-					-- Bounds Check
+					-- Bounds Check (non-scrollable only)
 					local function isOutOfBounds(guiObject)
 						local objectBottom = guiObject.AbsolutePosition.Y + guiObject.AbsoluteSize.Y
 						local containerBottom = List.AbsolutePosition.Y + List.AbsoluteSize.Y
-
 						return objectBottom > containerBottom
 					end
 
-					-- Remove Oldest
+					-- Remove Oldest (non-scrollable only)
 					local function removeOldest()
 						local labels = {}
-
 						for _, child in ipairs(List:GetChildren()) do
 							if child:IsA("TextLabel") or child:IsA("TextBox") then
 								table.insert(labels, child)
 							end
 						end
-
-						if #labels == 0 then
-							return
-						end
-
+						if #labels == 0 then return end
 						table.sort(labels, function(a, b)
 							return a.LayoutOrder < b.LayoutOrder
 						end)
-
 						local oldest = labels[1]
-
 						fireCallback("Remove", oldest)
 						oldest:Destroy()
 					end
 
-					-- Overflow Check
+					-- Overflow Check (non-scrollable only)
 					local function checkOverflow()
 						for _, child in ipairs(List:GetChildren()) do
 							if (child:IsA("TextLabel") or child:IsA("TextBox")) and isOutOfBounds(child) then
@@ -4536,7 +4654,7 @@ function Library:AddWindow(options)
 
 					function Terminal:Add(text, config)
 						config = config or {}
-						
+
 						local Sound = Instance.new("Sound")
 						Sound.SoundId = "rbxassetid://140207837688369"
 						Sound.Volume = 0.01
@@ -4562,6 +4680,7 @@ function Library:AddWindow(options)
 							TextSize = 14,
 							TextWrapped = wrapped,
 							TextXAlignment = Enum.TextXAlignment.Left,
+							TextYAlignment = Enum.TextYAlignment.Top,
 							TextColor3 = MessageColors[messageType] or MessageColors.Print,
 							LayoutOrder = Terminal.CurrentLayoutOrder,
 						}
@@ -4582,7 +4701,6 @@ function Library:AddWindow(options)
 								TextYAlignment = baseProperties.TextYAlignment,
 								TextColor3 = baseProperties.TextColor3,
 								LayoutOrder = baseProperties.LayoutOrder,
-
 								ClearTextOnFocus = false,
 								MultiLine = wrapped,
 								TextEditable = false,
@@ -4597,12 +4715,10 @@ function Library:AddWindow(options)
 								Text = "",
 								ZIndex = (Object.ZIndex or 1) + 1,
 							})
-
 							ClickDetector.Parent = Object
 
 							ClickDetector.MouseButton1Click:Connect(function()
 								Object:CaptureFocus()
-
 								task.defer(function()
 									if Object.Parent then
 										Object.CursorPosition = #Object.Text + 1
@@ -4615,21 +4731,18 @@ function Library:AddWindow(options)
 						end
 
 						Object.Parent = List
-
 						table.insert(Terminal.List, Object)
-
 						fireCallback("Add", Object)
 
-						task.defer(checkOverflow)
+						if Terminal.Options.scrollable ~= true then
+							task.defer(checkOverflow)
+						end
 
 						return Object
 					end
 
 					function Terminal:Remove(object)
-						if not object then
-							return
-						end
-
+						if not object then return end
 						if object.Parent == List then
 							fireCallback("Remove", object)
 							object:Destroy()
@@ -4643,32 +4756,27 @@ function Library:AddWindow(options)
 								child:Destroy()
 							end
 						end
-
 						Terminal.List = {}
 						Terminal.CurrentLayoutOrder = 0
 					end
 
 					function Terminal:GetChildren()
 						local objects = {}
-
 						for _, child in ipairs(List:GetChildren()) do
 							if child:IsA("TextLabel") or child:IsA("TextBox") then
 								table.insert(objects, child)
 							end
 						end
-
 						return objects
 					end
 
 					function Terminal:GetCount()
 						local count = 0
-
 						for _, child in ipairs(List:GetChildren()) do
 							if child:IsA("TextLabel") or child:IsA("TextBox") then
 								count += 1
 							end
 						end
-
 						return count
 					end
 
@@ -5734,10 +5842,10 @@ function Library:AddWindow(options)
 						return Box.Frame.Holder.Label.Text
 					end
 					function Box:SetText(text)
-						Box.Frame.Holder.TextBox.Text = text
+						Box.Frame.Holder.TextBox.Holder.Box.Text = text
 					end
 					function Box:GetText()
-						return Box.Frame.Holder.TextBox.Text
+						return Box.Frame.Holder.TextBox.Holder.Box.Text
 					end
 					function Box:SetExtend(number)
 						options.extend = number
@@ -5745,6 +5853,11 @@ function Library:AddWindow(options)
 					function Box:GetExtend()
 						return math.abs(options.extend)
 					end
+					function Box:Clear()
+						Box.Frame.Holder.TextBox.Holder.Box.Text = ""
+						extendBox(false)
+					end
+					
 					SubSection.List[#SubSection.List + 1] = Box
 					Box.Box = Box.Frame.Holder.TextBox.Holder.Box
 					Box.Frame.Parent = SubSection.Frame.Holder.List
@@ -5761,6 +5874,11 @@ function Library:AddWindow(options)
 							return
 						end
 						extendBox(false)
+						pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
+					end)
+					Box.Frame.Holder.TextBox.Holder.Box:GetPropertyChangedSignal("Text"):Connect(function()
+						if options.fireonchange ~= true then return end
+						if Box.Frame.Holder.TextBox.Holder.Box.Text == "" and options.fireonempty ~= true then return end
 						pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
 					end)
 					return Box
