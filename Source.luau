@@ -50,7 +50,16 @@ local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
 local SelfModules = {UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/s5nni/UI-Library/refs/heads/main/UI.luau"))()}
-local Storage = { Connections = {ForAuth = {}}, Tween = { Cosmetic = {} } }
+local Storage = {
+	
+	AuthenticationConfiguration = {IsBusy = false},
+	Authentication = {},
+	
+	Connections = {},
+	Tween = {
+		Cosmetic = {},
+	},
+}
 
 local ListenForInput = false
 local SelectedButtonTab = nil
@@ -532,7 +541,9 @@ function Library:AddWindow(options)
 			Name = "Stroke",
 			Thickness = 2.5,
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Transparency = 0.8,
+			Transparency = 0,
+			BorderOffset = UDim.new(0, -1),
+			Color = Library.Theme.BackgroundColor,
 			Enabled = options.default ~= false
 		}),
 
@@ -825,7 +836,26 @@ function Library:AddWindow(options)
 							end
 						end
 					end
-
+					if item.Type == "Graph" then
+						for _, line in ipairs(item.Frame.Holder.Field.Holder.List:GetChildren()) do
+							if line:IsA("Frame") then
+								line.BackgroundColor3 = accent
+								local glow = line:FindFirstChild("Glow")
+								if glow then
+									glow.ImageColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
+								end
+							end
+						end
+					end
+					if item.Type == "Ranker" then
+						for _, itemName in ipairs(item.Order) do
+							local f = item._frameMap[itemName]
+							if f then
+								local num = f.Holder:FindFirstChild("Num")
+								if num then num.TextColor3 = accent end
+							end
+						end
+					end
 					if item.Type == "Slider" then
 						item.Frame.Holder.Slider.Bar.Fill.BackgroundColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
 						item.Frame.Holder.Slider.Bar.Fill.Glow.ImageColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
@@ -871,6 +901,27 @@ function Library:AddWindow(options)
 									end
 								end
 							end
+							if item2.Type == "Graph" then
+								for _, line in ipairs(item2.Frame.Holder.Field.Holder.List:GetChildren()) do
+									if line:IsA("Frame") then
+										line.BackgroundColor3 = accent
+										local glow = line:FindFirstChild("Glow")
+										if glow then
+											glow.ImageColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
+										end
+									end
+								end
+							end
+
+							if item2.Type == "Ranker" then
+								for _, itemName in ipairs(item2.Order) do
+									local f = item2._frameMap[itemName]
+									if f then
+										local num = f.Holder:FindFirstChild("Num")
+										if num then num.TextColor3 = accent end
+									end
+								end
+							end
 							if item2.Type == "Slider" then
 								item2.Frame.Holder.Slider.Bar.Fill.BackgroundColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
 								item2.Frame.Holder.Slider.Bar.Fill.Glow.ImageColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(10, 10, 10))
@@ -895,296 +946,6 @@ function Library:AddWindow(options)
 			end)
 		elseif typeof(accent) == "Color3" then
 			setAccent(accent)
-		end
-	end
-
-	function Window:SetTheme(newTheme)
-		-- Update Library.Theme for every key provided
-		for key, val in next, newTheme do
-			for themeKey in next, Library.Theme do
-				if string.lower(key) == string.lower(themeKey) and typeof(val) == "Color3" then
-					Library.Theme[themeKey] = val
-				end
-			end
-		end
-
-		local tc   = Library.Theme.TopbarColor
-		local bc   = Library.Theme.BackgroundColor
-		local sc   = Library.Theme.SidebarColor
-		local secc = Library.Theme.SectionColor
-		local txtc = Library.Theme.TextColor
-
-		-- Update accent (uses existing setAccent which handles overlays, sliders, etc.)
-		local newAccent = newTheme.Accent or newTheme.accent
-		if newAccent then
-			setAccent(newAccent)
-		end
-
-		-- ── Window chrome ───────────────────────────────────────────────
-		Window.Frame.BackgroundColor3                   = tc
-		Window.Frame.Topbar.BackgroundColor3            = tc
-		Window.Frame.Topbar.Filling.BackgroundColor3    = tc
-		Window.Frame.Topbar.Titles.Label1.TextColor3    = txtc
-
-		Window.Frame.Background.BackgroundColor3           = bc
-		Window.Frame.Background.Filling.BackgroundColor3   = bc
-		Window.Frame.Background.Tabs.BackgroundColor3      = SelfModules.UI.Color.Add(bc, Color3.fromRGB(15,15,15))
-		Window.Frame.Background.Tabs.Holder.BackgroundColor3 = SelfModules.UI.Color.Add(bc, Color3.fromRGB(5,5,5))
-
-		Window.Frame.Sidebar.BackgroundColor3              = sc
-		Window.Frame.Sidebar.Filling.BackgroundColor3      = sc
-		Window.Frame.Sidebar.Line.BackgroundColor3         = SelfModules.UI.Color.Add(sc, Color3.fromRGB(10,10,10))
-		Window.Frame.Sidebar.Border.BackgroundColor3       = bc
-		Window.Frame.Sidebar.SearchBox.TextColor3          = txtc
-		Window.Frame.Sidebar.SearchBox.PlaceholderColor3   = SelfModules.UI.Color.Add(sc, Color3.fromRGB(10,10,10))
-		Window.Frame.Sidebar.Indicator1.ImageColor3        = txtc
-
-		-- ── Per-tab ──────────────────────────────────────────────────────
-		for _, tab in next, Window.Tabs do
-			tab.Frame.ScrollBarImageColor3 = SelfModules.UI.Color.Add(bc, Color3.fromRGB(15,15,15))
-
-			-- Sidebar tab button (selected/unselected)
-			if not tab.Button.Selected then
-				tab.Button.Frame.BackgroundColor3          = SelfModules.UI.Color.Add(sc, Color3.fromRGB(15,15,15))
-				tab.Button.Frame.Glow.ImageColor3          = SelfModules.UI.Color.Add(sc, Color3.fromRGB(15,15,15))
-				tab.Button.Frame.Button.BackgroundColor3   = SelfModules.UI.Color.Add(sc, Color3.fromRGB(5,5,5))
-			else
-				-- Selected tab gets accent colours
-				tab.Button.Frame.BackgroundColor3          = SelfModules.UI.Color.Sub(Library.Theme.Accent, Color3.fromRGB(45,45,45))
-				tab.Button.Frame.Glow.ImageColor3          = Library.Theme.Accent
-				tab.Button.Frame.Button.BackgroundColor3   = Library.Theme.Accent
-			end
-			tab.Button.Frame.Button.Label.TextColor3 = txtc
-
-			-- ── Sections ─────────────────────────────────────────────────
-			for _, section in next, tab.Sections do
-				section.Frame.BackgroundColor3       = secc
-				section.Frame.Line.BackgroundColor3  = SelfModules.UI.Color.Add(secc, Color3.fromRGB(10,10,10))
-				section.Frame.Header.TextColor3      = txtc
-				section.Frame.Indicator.TextColor3   = txtc
-
-				-- Helper to update an item (including subsections recursively)
-				local function updateItem(item, outerAdd, holderAdd)
-					if not item or not item.Frame then return end
-					local oAdd = Color3.fromRGB(outerAdd, outerAdd, outerAdd)
-					local hAdd = Color3.fromRGB(holderAdd, holderAdd, holderAdd)
-
-					item.Frame.BackgroundColor3 = SelfModules.UI.Color.Add(secc, oAdd)
-
-					local holder = item.Frame:FindFirstChild("Holder")
-					if holder then
-						holder.BackgroundColor3 = SelfModules.UI.Color.Add(secc, hAdd)
-						-- Update all text objects inside holder
-						for _, d in next, holder:GetDescendants() do
-							if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-								if d.Text ~= "Rainbow" then
-									d.TextColor3 = txtc
-								else
-									d.TextColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25, 25, 25))
-								end
-							end
-						end
-					end
-
-					-- Update specific item types
-					if item.Type == "Button" then
-						-- Update the actual TextButton background
-						local btn = item.Frame.Holder and item.Frame.Holder:FindFirstChild("Button")
-						if btn and btn:IsA("TextButton") then
-							btn.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-						end
-					elseif item.Type == "Toggle" then
-						local indicator = item.Frame.Holder and item.Frame.Holder:FindFirstChild("Indicator")
-						if indicator then
-							-- Update the outer indicator frame
-							indicator.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							local filler = indicator:FindFirstChild("Filler")
-							if filler then
-								filler.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							end
-							local overlay = indicator:FindFirstChild("Overlay")
-							if overlay then
-								-- If toggle is ON, use accent; otherwise use section colour
-								if tab.Flags[item.Flag] then
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.Accent, Color3.fromRGB(5,5,5))
-									if overlay.Glow then overlay.Glow.ImageColor3 = Library.Theme.Accent end
-								else
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25))
-									if overlay.Glow then overlay.Glow.ImageColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25)) end
-								end
-							end
-						end
-					elseif item.Type == "Slider" then
-						local slider = holder and holder:FindFirstChild("Slider")
-						if slider then
-							local bar = slider:FindFirstChild("Bar")
-							if bar then
-								bar.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-								local fill = bar:FindFirstChild("Fill")
-								if fill then
-									fill.BackgroundColor3 = SelfModules.UI.Color.Sub(Library.Theme.Accent, Color3.fromRGB(10,10,10))
-									if fill.Glow then fill.Glow.ImageColor3 = SelfModules.UI.Color.Sub(Library.Theme.Accent, Color3.fromRGB(10,10,10)) end
-								end
-							end
-							local point = slider:FindFirstChild("Point")
-							if point then point.BackgroundColor3 = Library.Theme.Accent end
-							local point2 = slider:FindFirstChild("Point2")
-							if point2 then point2.BackgroundColor3 = Library.Theme.Accent end
-						end
-						-- If slider has a toggle indicator (toggleable = true)
-						local indicator = holder and holder:FindFirstChild("Indicator")
-						if indicator then
-							indicator.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							local filler = indicator:FindFirstChild("Filler")
-							if filler then
-								filler.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							end
-							local overlay = indicator:FindFirstChild("Overlay")
-							if overlay then
-								if tab.Flags[item.Flag] then
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.Accent, Color3.fromRGB(5,5,5))
-									if overlay.Glow then overlay.Glow.ImageColor3 = Library.Theme.Accent end
-								else
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25))
-									if overlay.Glow then overlay.Glow.ImageColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25)) end
-								end
-							end
-						end
-					elseif item.Type == "Bind" then
-						local bindFrame = holder and holder:FindFirstChild("Bind")
-						if bindFrame then
-							bindFrame.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd+5, outerAdd+5, outerAdd+5))
-							local bindLabel = bindFrame:FindFirstChild("Label")
-							if bindLabel then
-								bindLabel.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(holderAdd+5, holderAdd+5, holderAdd+5))
-							end
-						end
-						-- Toggleable bind indicator
-						local indicator = holder and holder:FindFirstChild("Indicator")
-						if indicator then
-							indicator.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							local filler = indicator:FindFirstChild("Filler")
-							if filler then
-								filler.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-							end
-							local overlay = indicator:FindFirstChild("Overlay")
-							if overlay then
-								if tab.Flags[item.Flag] then
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.Accent, Color3.fromRGB(5,5,5))
-									if overlay.Glow then overlay.Glow.ImageColor3 = Library.Theme.Accent end
-								else
-									overlay.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25))
-									if overlay.Glow then overlay.Glow.ImageColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25)) end
-								end
-							end
-						end
-					elseif item.Type == "Dropdown" then
-						local top = holder and holder:FindFirstChild("Holder")
-						if top then
-							local line = top:FindFirstChild("Line")
-							if line then line.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd)) end
-						end
-						-- Update list items
-						local list = holder and holder:FindFirstChild("List")
-						if list then
-							for _, listItem in pairs(list:GetChildren()) do
-								if listItem:IsA("Frame") then
-									listItem.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd+5, outerAdd+5, outerAdd+5))
-									local btn = listItem:FindFirstChild("Button")
-									if btn then
-										btn.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(holderAdd+5, holderAdd+5, holderAdd+5))
-										if btn:IsA("TextButton") then btn.TextColor3 = txtc end
-									end
-								end
-							end
-						end
-					elseif item.Type == "Picker" then
-						local top = holder and holder:FindFirstChild("Top")
-						if top then
-							-- Update the line inside Top
-							local line = top:FindFirstChild("Line")
-							if line then line.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd)) end
-							local selected = top:FindFirstChild("Selected")
-							if selected then
-								local preview = selected:FindFirstChild("Preview")
-								if preview then
-									preview.BackgroundColor3 = Color3.fromHSV(item.Color.R, item.Color.G, item.Color.B)
-									if preview.Glow then preview.Glow.ImageColor3 = Color3.fromHSV(item.Color.R, item.Color.G, item.Color.B) end
-								end
-							end
-						end
-						-- Update RGB boxes
-						local rgbFrame = holder and holder:FindFirstChild("Holder") and holder.Holder:FindFirstChild("RGB")
-						if rgbFrame then
-							for _, rgbItem in pairs(rgbFrame:GetChildren()) do
-								local box = rgbItem:FindFirstChild("Box")
-								if box then
-									box.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(15,15,15))
-								end
-							end
-						end
-						-- Update hue slider bar (the small white handle's outer frame)
-						local hueSlider = holder and holder:FindFirstChild("Holder") and holder.Holder:FindFirstChild("HueSlider")
-						if hueSlider then
-							local bar = hueSlider:FindFirstChild("Bar")
-							if bar then
-								bar.BackgroundColor3 = SelfModules.UI.Color.Sub(secc, Color3.fromRGB(5,5,5))
-							end
-						end
-						-- Update rainbow toggle indicator
-						local rainbow = holder and holder:FindFirstChild("Holder") and holder.Holder:FindFirstChild("Rainbow")
-						if rainbow then
-							local indicator = rainbow:FindFirstChild("Indicator")
-							if indicator then
-								indicator.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(outerAdd, outerAdd, outerAdd))
-								local overlay = indicator:FindFirstChild("Overlay")
-								if overlay then
-									if item.Rainbow then
-										overlay.BackgroundColor3 = SelfModules.UI.Color.Add(Library.Theme.Accent, Color3.fromRGB(15,15,15))
-										if overlay.Glow then overlay.Glow.ImageColor3 = Library.Theme.Accent end
-									else
-										overlay.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25))
-										if overlay.Glow then overlay.Glow.ImageColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(25,25,25)) end
-									end
-								end
-							end
-						end
-					elseif item.Type == "Box" then
-						local textBoxFrame = holder and holder:FindFirstChild("TextBox")
-						if textBoxFrame then
-							local innerHolder = textBoxFrame:FindFirstChild("Holder")
-							if innerHolder then
-								innerHolder.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(holderAdd, holderAdd, holderAdd))
-								local icon = innerHolder:FindFirstChild("Icon")
-								if icon then
-									icon.TextColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(40,40,40))
-								end
-							end
-						end
-					end
-				end
-
-				-- Update all items in this section
-				for _, item in next, section.List do
-					updateItem(item, 15, 5)
-					-- If it's a SubSection, update its internal items as well
-					if item.Type == "SubSection" then
-						-- Update SubSection frame and holder colours
-						item.Frame.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(15,15,15))
-						if item.Frame.Holder then
-							item.Frame.Holder.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(5,5,5))
-							item.Frame.Holder.Header.TextColor3 = txtc
-							item.Frame.Holder.Indicator.TextColor3 = txtc
-							local line = item.Frame.Holder:FindFirstChild("Line")
-							if line then line.BackgroundColor3 = SelfModules.UI.Color.Add(secc, Color3.fromRGB(15,15,15)) end
-						end
-						-- Update each sub‑item
-						for _, subItem in next, item.List do
-							updateItem(subItem, 20, 10)
-						end
-					end
-				end
-			end
 		end
 	end
 
@@ -1291,7 +1052,7 @@ function Library:AddWindow(options)
 		local stroke = self.Frame:FindFirstChild("Stroke")
 		if stroke then
 			tween(stroke, 0.25, {
-				Transparency = bool and 0.8 or 1
+				Transparency = bool and 0 or 1
 			})
 		end
 	end
@@ -1411,19 +1172,19 @@ function Library:AddWindow(options)
 	
 	Window.Frame.GroupTransparency = 1
 	Window.Frame.Rotation = math.random(-45, 45)
-	Window.Frame.Position = UDim2.new(0.5, -Window.Frame.Size.X.Offset/2, 1.5, -Window.Frame.Size.Y.Offset/2)
+	Window.Frame.Position = UDim2.new(0.5, -Window.Frame.Size.X.Offset/2, -1.5, -Window.Frame.Size.Y.Offset/2)
 	local LoadingTween = TS:Create(Window.Frame, TweenInfo.new(1, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Rotation = 0, GroupTransparency = 0, Position = UDim2.new(0.5, -Window.Frame.Size.X.Offset/2, 0.5, -Window.Frame.Size.Y.Offset/2) })
 	LoadingTween:Play()
 	local LoadingTweenConnection
 	LoadingTweenConnection = LoadingTween.Completed:Connect(function()
 		LoadingTweenConnection:Disconnect()
 		LoadingTweenConnection = nil
-		TS:Create(BackgroundHandler.UICorner, TweenInfo.new(1, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {CornerRadius = UDim.new(1, 0)}):Play()
-		TS:Create(BackgroundHandler.UIStroke, TweenInfo.new(3, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {Transparency = 1}):Play()
-		TS:Create(BackgroundHandler, TweenInfo.new(2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 1.5, 0)}):Play()
+		TS:Create(BackgroundHandler.UICorner, TweenInfo.new(1, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {CornerRadius = UDim.new(1, 0)}):Play()
+		TS:Create(BackgroundHandler.UIStroke, TweenInfo.new(3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {Transparency = 1}):Play()
+		TS:Create(BackgroundHandler, TweenInfo.new(2, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 1.5, 0)}):Play()
 		local LoadingTweenConnection2
 		local LoadingTween2
-		LoadingTween2 = TS:Create(BackgroundHandler, TweenInfo.new(3, Enum.EasingStyle.Back, Enum.EasingDirection.InOut), {Position = UDim2.new(0.5, 0, 1.5, 0)})
+		LoadingTween2 = TS:Create(BackgroundHandler, TweenInfo.new(2, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), {Position = UDim2.new(0.5, 0, 1.5, 0)})
 		LoadingTween2:Play()
 		LoadingTweenConnection2 = LoadingTween2.Completed:Connect(function()
 			LoadingTweenConnection2:Disconnect()
@@ -1657,12 +1418,33 @@ function Library:AddWindow(options)
 					TextSize = 20,
 				})
 			}, UDim.new(0, 5))
-
-			local function toggleSection(bool)
+			
+			Section.Locked = false
+			
+			local function toggleSection(bool, forced)
+				if Section.Locked == true then return end
 				Section.Toggled = bool
-				tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
-				tween(Section.Frame.Indicator, 0.5, { Rotation = bool and 45 or 0 })
-				tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+				
+				if forced == nil then
+					tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
+					tween(Section.Frame.Indicator, 0.5, { Rotation = bool and 45 or 0 })
+					tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+				elseif forced == true then
+					Section.Frame.Size = UDim2.new(1, -10, 0, Section:GetHeight())
+					Section.Frame.Indicator.Rotation = bool and 45 or 0
+					Tab.Frame.CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight())
+				end
+			end
+			
+			function Section:SetLock(bool)
+				toggleSection(not bool, true)
+				Section.Locked = bool
+				tween(Section.Frame.Header, 0.5, { TextColor3 = bool == true and SelfModules.UI.Color.Sub(Library.Theme.TextColor, Color3.fromRGB(155, 155, 155)) or Library.Theme.TextColor })
+				tween(Section.Frame.Indicator, 0.5, { TextColor3 = bool == true and SelfModules.UI.Color.Sub(Library.Theme.TextColor, Color3.fromRGB(155, 155, 155)) or Library.Theme.TextColor })
+			end
+			
+			function Section:GetLock()
+				return Section.Locked
 			end
 
 			function Section:GetHeight()
@@ -2260,18 +2042,22 @@ function Library:AddWindow(options)
 					Excluded = {},
 					List     = {},
 					Callback = callback,
-					Style    = options and options.style or "numeric", -- NEW
+					Style    = options and options.style or "numeric",
+					Max      = options and options.max or math.huge,
 				}
 
 				local ITEM_HEIGHT  = 32
 				local ITEM_GAP     = 4
 				local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
-				local HAS_EXCLUDE  = options and options.exclude or false -- CHANGED (your fix)
+				local HAS_EXCLUDE  = options and options.exclude or false
+				local MAX          = options and options.max or math.huge
 				local DIVIDER_KEY  = "__DIVIDER__"
 
 				local unified      = {}
 				local frameMap     = {}
 				local dividerFrame = nil
+				
+				Ranker._frameMap = frameMap
 
 				local function slotY(i)
 					return (i - 1) * ITEM_STRIDE
@@ -2292,6 +2078,7 @@ function Library:AddWindow(options)
 						end
 						return
 					end
+
 					local pastDivider = false
 					for _, v in ipairs(unified) do
 						if v == DIVIDER_KEY then
@@ -2300,6 +2087,23 @@ function Library:AddWindow(options)
 							Ranker.Excluded[#Ranker.Excluded + 1] = v
 						else
 							Ranker.Order[#Ranker.Order + 1] = v
+						end
+					end
+
+					-- NEW: push overflow items past the divider
+					if #Ranker.Order > Ranker.Max then
+						local dividerIdx = table.find(unified, DIVIDER_KEY)
+						while #Ranker.Order > Ranker.Max do
+							local overflow = Ranker.Order[#Ranker.Order]
+							table.remove(Ranker.Order, #Ranker.Order)
+							Ranker.Excluded[#Ranker.Excluded + 1] = overflow
+
+							local itemIdx = table.find(unified, overflow)
+							if itemIdx then
+								table.remove(unified, itemIdx)
+								dividerIdx = table.find(unified, DIVIDER_KEY)
+								table.insert(unified, dividerIdx + 1, overflow)
+							end
 						end
 					end
 				end
@@ -2572,6 +2376,112 @@ function Library:AddWindow(options)
 
 					return Item
 				end
+				
+				function Ranker:Move(itemName, exclude, position)
+					assert(type(itemName) == "string", "Move requires an item name string")
+					assert(type(exclude) == "boolean", "Move requires a boolean for exclude")
+					assert(frameMap[itemName], "Move: item '" .. itemName .. "' does not exist")
+
+					local dividerIdx = HAS_EXCLUDE and table.find(unified, DIVIDER_KEY) or nil
+
+					-- remove item from its current position
+					local currentIdx = table.find(unified, itemName)
+					if not currentIdx then return end
+					table.remove(unified, currentIdx)
+
+					-- recalculate divider index after removal
+					if dividerIdx then
+						dividerIdx = table.find(unified, DIVIDER_KEY)
+					end
+
+					if not HAS_EXCLUDE or not exclude then
+						-- moving INTO active (ranked) area
+						local activeStart = 1
+						local activeEnd   = dividerIdx and (dividerIdx - 1) or #unified
+
+						if position then
+							-- count active slots to find the real unified index
+							local activeCount = 0
+							local insertAt    = activeEnd + 1
+
+							for i, v in ipairs(unified) do
+								if v ~= DIVIDER_KEY then
+									activeCount += 1
+									if activeCount == position then
+										-- shift everything from here forward
+										insertAt = i
+										break
+									end
+								end
+							end
+
+							table.insert(unified, insertAt, itemName)
+						else
+							-- no position given, append just before divider (end of active area)
+							local insertAt = dividerIdx or (#unified + 1)
+							table.insert(unified, insertAt, itemName)
+						end
+
+						-- enforce max: if inserting into active pushed us over, bump the last active item to excluded
+						if Ranker.Max ~= math.huge then
+							dividerIdx = table.find(unified, DIVIDER_KEY)
+							local activeItems = {}
+							for i, v in ipairs(unified) do
+								if v ~= DIVIDER_KEY and (not dividerIdx or i < dividerIdx) then
+									activeItems[#activeItems + 1] = { name = v, idx = i }
+								end
+							end
+
+							if #activeItems > Ranker.Max then
+								local bump = activeItems[#activeItems]
+								table.remove(unified, bump.idx)
+								dividerIdx = table.find(unified, DIVIDER_KEY)
+								table.insert(unified, dividerIdx + 1, bump.name)
+							end
+						end
+
+					else
+						-- moving INTO excluded area
+						if not HAS_EXCLUDE then
+							-- no exclude zone exists, just append to end
+							table.insert(unified, #unified + 1, itemName)
+						elseif position then
+							-- find the nth slot inside excluded zone
+							dividerIdx = table.find(unified, DIVIDER_KEY)
+							local excludedCount = 0
+							local insertAt      = #unified + 1
+
+							for i = dividerIdx + 1, #unified do
+								local v = unified[i]
+								if v ~= DIVIDER_KEY then
+									excludedCount += 1
+									if excludedCount == position then
+										insertAt = i
+										break
+									end
+								end
+							end
+
+							table.insert(unified, insertAt, itemName)
+						else
+							-- no position, append to end of excluded
+							table.insert(unified, #unified + 1, itemName)
+						end
+					end
+
+					rebuildOrderExcluded()
+					refreshNumbers()
+					refreshPositions(nil)
+
+					-- animate the moved item to its new slot
+					local newIdx = table.find(unified, itemName)
+					if newIdx and frameMap[itemName] then
+						tween(frameMap[itemName], 0.18, { Position = UDim2.new(0, 0, 0, slotY(newIdx)) })
+					end
+
+					Ranker:UpdateHeight()
+					pcall(task.spawn, Ranker.Callback, Ranker.Order, Ranker.Excluded)
+				end
 
 				function Ranker:Remove(itemName, ignoreToggle)
 					local ui = table.find(unified, itemName)
@@ -2609,14 +2519,28 @@ function Library:AddWindow(options)
 				function Ranker:GetStyle()
 					return self.Style
 				end
+				
+				function Ranker:SetMax(number)
+					assert(type(number) == "number" and number > 0, "SetMax requires a positive number")
+					Ranker.Max = number
+					MAX = number
+					rebuildOrderExcluded()
+					refreshNumbers()
+					refreshPositions(nil)
+					Ranker:UpdateHeight()
+				end
+
+				function Ranker:GetMax()
+					return Ranker.Max
+				end
 
 				UIS.InputChanged:Connect(function(input)
 					if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
 					if not dragging or not dragFrame then return end
 
-					local mouseY  = input.Position.Y
-					local listTop = Ranker.Frame.Holder.List.AbsolutePosition.Y
-					local localY  = mouseY - dragOffsetY - listTop
+					local mouseY   = input.Position.Y
+					local listTop  = Ranker.Frame.Holder.List.AbsolutePosition.Y
+					local localY   = mouseY - dragOffsetY - listTop
 					local clampedY = math.clamp(localY, 0, totalListH() - ITEM_HEIGHT)
 
 					dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
@@ -2628,6 +2552,18 @@ function Library:AddWindow(options)
 						local currentSlot = table.find(unified, dragging)
 						targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
 						targetSlot = math.clamp(targetSlot, 1, #unified)
+					end
+
+					-- NEW: block dragging above divider if max is reached and item is currently excluded
+					if HAS_EXCLUDE and Ranker.Max ~= math.huge then
+						local dividerIdx  = table.find(unified, DIVIDER_KEY)
+						local currentSlot = table.find(unified, dragging)
+						local isExcluded  = currentSlot and currentSlot > dividerIdx
+						local atMax       = #Ranker.Order >= Ranker.Max
+
+						if isExcluded and atMax and targetSlot <= dividerIdx then
+							return -- block the move
+						end
 					end
 
 					local currentSlot = table.find(unified, dragging)
@@ -3127,6 +3063,12 @@ function Library:AddWindow(options)
 					end
 					extendBox(false)
 					pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
+					if options.keepfocused ~= nil and options.keepfocused == true then
+						Box.Frame.Holder.TextBox.Holder.Box:CaptureFocus()
+					end
+				end)
+				Box.Frame.Holder.TextBox.Holder.Box.Focused:Connect(function()
+					extendBox(true)
 				end)
 				Box.Frame.Holder.TextBox.Holder.Box:GetPropertyChangedSignal("Text"):Connect(function()
 					if options.fireonchange ~= true then return end
@@ -4426,13 +4368,35 @@ function Library:AddWindow(options)
 						}),
 					}, UDim.new(0, 5)),
 				}, UDim.new(0, 5))
+				
+				SubSection.Locked = false
 
-				local function toggleSubSection(bool)
+				local function toggleSubSection(bool, forced)
+					if SubSection.Locked == true then return end
 					SubSection.Toggled = bool
-					tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, 2, 0, SubSection:GetHeight()) })
-					tween(SubSection.Frame.Holder.Indicator, 0.5, { Rotation = bool and 45 or 0 })
-					tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
-					tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+					
+					if forced == nil then
+						tween(SubSection.Frame, 0.5, { Size = UDim2.new(1, 2, 0, SubSection:GetHeight()) })
+						tween(SubSection.Frame.Holder.Indicator, 0.5, { Rotation = bool and 45 or 0 })
+						tween(Section.Frame, 0.5, { Size = UDim2.new(1, -10, 0, Section:GetHeight()) })
+						tween(Tab.Frame, 0.5, { CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight()) })
+					elseif forced == true then
+						SubSection.Frame.Size = UDim2.new(1, 2, 0, SubSection:GetHeight())
+						SubSection.Frame.Holder.Indicator.Rotation = bool and 45 or 0
+						Section.Frame.Size = UDim2.new(1, -10, 0, Section:GetHeight())
+						Tab.Frame.CanvasSize = UDim2.new(0, 0, 0, Tab:GetHeight())
+					end
+				end
+				
+				function SubSection:SetLock(bool)
+					toggleSubSection(not bool, true)
+					SubSection.Locked = bool
+					tween(SubSection.Frame.Holder.Header, 0.5, { TextColor3 = bool == true and SelfModules.UI.Color.Sub(Library.Theme.TextColor, Color3.fromRGB(155, 155, 155)) or Library.Theme.TextColor })
+					tween(SubSection.Frame.Holder.Indicator, 0.5, { TextColor3 = bool == true and SelfModules.UI.Color.Sub(Library.Theme.TextColor, Color3.fromRGB(155, 155, 155)) or Library.Theme.TextColor })
+				end
+
+				function SubSection:GetLock()
+					return SubSection.Locked
 				end
 
 				function SubSection:GetHeight()
@@ -5017,17 +4981,21 @@ function Library:AddWindow(options)
 						List     = {},
 						Callback = callback,
 						Style    = options and options.style or "numeric",
+						Max      = options and options.max or math.huge,
 					}
 
 					local ITEM_HEIGHT  = 32
 					local ITEM_GAP     = 4
 					local ITEM_STRIDE  = ITEM_HEIGHT + ITEM_GAP
 					local HAS_EXCLUDE  = options and options.exclude or false
+					local MAX          = options and options.max or math.huge
 					local DIVIDER_KEY  = "__DIVIDER__"
 
 					local unified      = {}
 					local frameMap     = {}
 					local dividerFrame = nil
+					
+					Ranker._frameMap = frameMap
 
 					local function slotY(i)
 						return (i - 1) * ITEM_STRIDE
@@ -5048,6 +5016,7 @@ function Library:AddWindow(options)
 							end
 							return
 						end
+
 						local pastDivider = false
 						for _, v in ipairs(unified) do
 							if v == DIVIDER_KEY then
@@ -5056,6 +5025,23 @@ function Library:AddWindow(options)
 								Ranker.Excluded[#Ranker.Excluded + 1] = v
 							else
 								Ranker.Order[#Ranker.Order + 1] = v
+							end
+						end
+
+						-- NEW: push overflow items past the divider
+						if #Ranker.Order > Ranker.Max then
+							local dividerIdx = table.find(unified, DIVIDER_KEY)
+							while #Ranker.Order > Ranker.Max do
+								local overflow = Ranker.Order[#Ranker.Order]
+								table.remove(Ranker.Order, #Ranker.Order)
+								Ranker.Excluded[#Ranker.Excluded + 1] = overflow
+
+								local itemIdx = table.find(unified, overflow)
+								if itemIdx then
+									table.remove(unified, itemIdx)
+									dividerIdx = table.find(unified, DIVIDER_KEY)
+									table.insert(unified, dividerIdx + 1, overflow)
+								end
 							end
 						end
 					end
@@ -5329,6 +5315,112 @@ function Library:AddWindow(options)
 
 						return Item
 					end
+					
+					function Ranker:Move(itemName, exclude, position)
+						assert(type(itemName) == "string", "Move requires an item name string")
+						assert(type(exclude) == "boolean", "Move requires a boolean for exclude")
+						assert(frameMap[itemName], "Move: item '" .. itemName .. "' does not exist")
+
+						local dividerIdx = HAS_EXCLUDE and table.find(unified, DIVIDER_KEY) or nil
+
+						-- remove item from its current position
+						local currentIdx = table.find(unified, itemName)
+						if not currentIdx then return end
+						table.remove(unified, currentIdx)
+
+						-- recalculate divider index after removal
+						if dividerIdx then
+							dividerIdx = table.find(unified, DIVIDER_KEY)
+						end
+
+						if not HAS_EXCLUDE or not exclude then
+							-- moving INTO active (ranked) area
+							local activeStart = 1
+							local activeEnd   = dividerIdx and (dividerIdx - 1) or #unified
+
+							if position then
+								-- count active slots to find the real unified index
+								local activeCount = 0
+								local insertAt    = activeEnd + 1
+
+								for i, v in ipairs(unified) do
+									if v ~= DIVIDER_KEY then
+										activeCount += 1
+										if activeCount == position then
+											-- shift everything from here forward
+											insertAt = i
+											break
+										end
+									end
+								end
+
+								table.insert(unified, insertAt, itemName)
+							else
+								-- no position given, append just before divider (end of active area)
+								local insertAt = dividerIdx or (#unified + 1)
+								table.insert(unified, insertAt, itemName)
+							end
+
+							-- enforce max: if inserting into active pushed us over, bump the last active item to excluded
+							if Ranker.Max ~= math.huge then
+								dividerIdx = table.find(unified, DIVIDER_KEY)
+								local activeItems = {}
+								for i, v in ipairs(unified) do
+									if v ~= DIVIDER_KEY and (not dividerIdx or i < dividerIdx) then
+										activeItems[#activeItems + 1] = { name = v, idx = i }
+									end
+								end
+
+								if #activeItems > Ranker.Max then
+									local bump = activeItems[#activeItems]
+									table.remove(unified, bump.idx)
+									dividerIdx = table.find(unified, DIVIDER_KEY)
+									table.insert(unified, dividerIdx + 1, bump.name)
+								end
+							end
+
+						else
+							-- moving INTO excluded area
+							if not HAS_EXCLUDE then
+								-- no exclude zone exists, just append to end
+								table.insert(unified, #unified + 1, itemName)
+							elseif position then
+								-- find the nth slot inside excluded zone
+								dividerIdx = table.find(unified, DIVIDER_KEY)
+								local excludedCount = 0
+								local insertAt      = #unified + 1
+
+								for i = dividerIdx + 1, #unified do
+									local v = unified[i]
+									if v ~= DIVIDER_KEY then
+										excludedCount += 1
+										if excludedCount == position then
+											insertAt = i
+											break
+										end
+									end
+								end
+
+								table.insert(unified, insertAt, itemName)
+							else
+								-- no position, append to end of excluded
+								table.insert(unified, #unified + 1, itemName)
+							end
+						end
+
+						rebuildOrderExcluded()
+						refreshNumbers()
+						refreshPositions(nil)
+
+						-- animate the moved item to its new slot
+						local newIdx = table.find(unified, itemName)
+						if newIdx and frameMap[itemName] then
+							tween(frameMap[itemName], 0.18, { Position = UDim2.new(0, 0, 0, slotY(newIdx)) })
+						end
+
+						Ranker:UpdateHeight()
+						pcall(task.spawn, Ranker.Callback, Ranker.Order, Ranker.Excluded)
+					end
 
 					function Ranker:Remove(itemName, ignoreToggle)
 						local ui = table.find(unified, itemName)
@@ -5366,14 +5458,28 @@ function Library:AddWindow(options)
 					function Ranker:GetStyle()
 						return self.Style
 					end
+					
+					function Ranker:SetMax(number)
+						assert(type(number) == "number" and number > 0, "SetMax requires a positive number")
+						Ranker.Max = number
+						MAX = number
+						rebuildOrderExcluded()
+						refreshNumbers()
+						refreshPositions(nil)
+						Ranker:UpdateHeight()
+					end
+
+					function Ranker:GetMax()
+						return Ranker.Max
+					end
 
 					UIS.InputChanged:Connect(function(input)
 						if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
 						if not dragging or not dragFrame then return end
 
-						local mouseY  = input.Position.Y
-						local listTop = Ranker.Frame.Holder.List.AbsolutePosition.Y
-						local localY  = mouseY - dragOffsetY - listTop
+						local mouseY   = input.Position.Y
+						local listTop  = Ranker.Frame.Holder.List.AbsolutePosition.Y
+						local localY   = mouseY - dragOffsetY - listTop
 						local clampedY = math.clamp(localY, 0, totalListH() - ITEM_HEIGHT)
 
 						dragFrame.Position = UDim2.new(0, 0, 0, clampedY)
@@ -5385,6 +5491,18 @@ function Library:AddWindow(options)
 							local currentSlot = table.find(unified, dragging)
 							targetSlot = targetSlot + (currentSlot and currentSlot < targetSlot and 1 or -1)
 							targetSlot = math.clamp(targetSlot, 1, #unified)
+						end
+
+						-- NEW: block dragging above divider if max is reached and item is currently excluded
+						if HAS_EXCLUDE and Ranker.Max ~= math.huge then
+							local dividerIdx  = table.find(unified, DIVIDER_KEY)
+							local currentSlot = table.find(unified, dragging)
+							local isExcluded  = currentSlot and currentSlot > dividerIdx
+							local atMax       = #Ranker.Order >= Ranker.Max
+
+							if isExcluded and atMax and targetSlot <= dividerIdx then
+								return -- block the move
+							end
 						end
 
 						local currentSlot = table.find(unified, dragging)
@@ -5875,6 +5993,12 @@ function Library:AddWindow(options)
 						end
 						extendBox(false)
 						pcall(task.spawn, Box.Callback, Box.Frame.Holder.TextBox.Holder.Box.Text)
+						if options.keepfocused ~= nil and options.keepfocused == true then
+							Box.Frame.Holder.TextBox.Holder.Box:CaptureFocus()
+						end
+					end)
+					Box.Frame.Holder.TextBox.Holder.Box.Focused:Connect(function()
+						extendBox(true)
 					end)
 					Box.Frame.Holder.TextBox.Holder.Box:GetPropertyChangedSignal("Text"):Connect(function()
 						if options.fireonchange ~= true then return end
@@ -7128,10 +7252,14 @@ function Library:AddAuthentication(options)
 		Type = "Authentication Menu",
 		_secretKey = options.Key,
 		_activeMethod = options.Method,
+		_LockMethod = options.Lock,
 		_isAuthenticated = false,
 		_lastInput = nil,
 		_onSubmit = nil,
 	}
+	
+	repeat wait() until Storage.AuthenticationConfiguration.IsBusy == false
+	Storage.AuthenticationConfiguration.IsBusy = true
 
 	local icon, hasIcon do
 		local raw = options.Icon
@@ -7148,8 +7276,9 @@ function Library:AddAuthentication(options)
 		Name = "Window",
 		Size = UDim2.new(0, 324, 0, 330),
 		BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-		Position = UDim2.new(2, 0, 0.5, 0),
+		Position = UDim2.new(0.5, 0, -1.5, 0),
 		AnchorPoint = Vector2.new(0.5, 0.5),
+		Rotation = math.random(-45, 45),
 
 		hasIcon and SelfModules.UI.Create("ImageLabel", {
 			Name = "Icon",
@@ -7172,6 +7301,21 @@ function Library:AddAuthentication(options)
 				Position = UDim2.new(0, 1, 0, 1),
 				BackgroundColor3 = Color3.fromRGB(30, 30, 30),
 				BorderSizePixel = 0,
+				
+				SelfModules.UI.Create("TextButton", {
+					Name = "Close",
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					Position = UDim2.new(0, 5, 0, 5),
+					Size = UDim2.new(0, 20, 0, 20),
+					Font = Enum.Font.SourceSansBold,
+					Text = "+",
+					TextColor3 = Color3.fromRGB(65, 65, 65),
+					TextSize = 20,
+					AutoButtonColor = false,
+					Rotation = 45,
+					ZIndex = 4,
+				}, UDim.new(0, 6)),
 
 				SelfModules.UI.Create("UICorner", {
 					CornerRadius = UDim.new(0, 12),
@@ -7187,17 +7331,56 @@ function Library:AddAuthentication(options)
 					SelfModules.UI.Create("TextBox", {
 						Name = "Box",
 						BackgroundTransparency = 1,
-						Size = UDim2.new(0, 226, 0, 20),
+						Size = UDim2.new(0, options.Method == "Token" and 113 or 226, 0, 20),
 						Position = UDim2.new(0.0242, 0, 0.4706, 0),
 						Font = Enum.Font.SourceSans,
 						PlaceholderColor3 = Color3.fromRGB(200, 200, 200),
-						PlaceholderText = options.Method == "Token" and "Token" or "Key",
+						PlaceholderText = options.Method == "Token" and "Username" or "Key",
 						Text = "",
 						TextColor3 = Color3.fromRGB(255, 255, 255),
 						ClearTextOnFocus = false,
 						TextSize = 15,
 						TextXAlignment = Enum.TextXAlignment.Left,
 						BorderSizePixel = 0,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+					}),
+
+					SelfModules.UI.Create("TextBox", {
+						Name = "Box2",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(0, 113, 0, 20),
+						Position = UDim2.new(0.459, 0, 0.4706, 0),
+						Font = Enum.Font.SourceSans,
+						PlaceholderColor3 = Color3.fromRGB(200, 200, 200),
+						PlaceholderText = "Password",
+						Text = "",
+						TextColor3 = Color3.fromRGB(255, 255, 255),
+						ClearTextOnFocus = false,
+						TextSize = 15,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						BorderSizePixel = 0,
+						Visible = options.Method == "Token" and true or false,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						
+						SelfModules.UI.Create("TextLabel", {
+							Name = "Label",
+							BackgroundTransparency = 1,
+							Position = UDim2.new(0, 0, 0, 0),
+							Size = UDim2.new(1, 0, 1, 0),
+							Font = Enum.Font.SourceSans,
+							Text = "",
+							TextColor3 = Color3.fromRGB(255, 255, 255),
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextYAlignment = Enum.TextYAlignment.Top,
+							TextSize = 18,
+							ZIndex = 2,
+							BorderSizePixel = 0,
+							TextTruncate = Enum.TextTruncate.AtEnd,
+							SelfModules.UI.Create("UIStroke", {
+								Thickness = 0.8,
+								Color = Color3.fromRGB(35, 35, 35),
+							}),
+						}),
 					}),
 
 					SelfModules.UI.Create("Frame", {
@@ -7240,7 +7423,7 @@ function Library:AddAuthentication(options)
 						Name = "DiscordButton",
 						BackgroundColor3 = Color3.fromRGB(98, 111, 252),
 						Position = UDim2.new(0.065, 0, 0.226, 0),
-						Size = UDim2.new(0, 111, 0, 34),
+						Size = UDim2.new(0, options.Lock == true and 227 or 111, 0, 34),
 						ZIndex = 2,
 
 						SelfModules.UI.Create("TextButton", {
@@ -7250,7 +7433,7 @@ function Library:AddAuthentication(options)
 							Position = UDim2.new(0, 1, 0, 1),
 							Size = UDim2.new(1, -2, 1, -2),
 							Font = Enum.Font.SourceSansBold,
-							Text = "Discord Server",
+							Text = options.Lock == true and "Join Discord Server" or "Discord Server",
 							TextColor3 = Color3.fromRGB(255, 255, 255),
 							TextSize = 15,
 							AutoButtonColor = false,
@@ -7271,6 +7454,7 @@ function Library:AddAuthentication(options)
 						Position = UDim2.new(0.52, 0, 0.226, 0),
 						Size = UDim2.new(0, 111, 0, 34),
 						ZIndex = 2,
+						Visible = not options.Lock,
 
 						SelfModules.UI.Create("TextButton", {
 							Name = "TextButton",
@@ -7343,8 +7527,11 @@ function Library:AddAuthentication(options)
 	Verification.Frame.Parent = ScreenGui
 
 	local handler = Verification.Frame.PositionHandler.Handler
+	local Close = handler.Close
 	local inputField = handler.InputField
 	local box = inputField.Box
+	local box2 = inputField.Box2
+	local box2Label = inputField.Box2.Label
 	local activeFill = inputField.Fill.ActiveFill
 	local toggleBtn = handler.Footer.ToggleMethodButton.TextButton
 
@@ -7359,7 +7546,7 @@ function Library:AddAuthentication(options)
 	local Tinfo = TweenInfo.new(1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 	local Tinfo2 = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local Tinfo3 = TweenInfo.new(2.5, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
-	
+
 	function Verification:OnSubmit(callback)
 		assert(type(callback) == "function", "OnSubmit requires a function")
 		self._onSubmit = callback
@@ -7378,12 +7565,14 @@ function Library:AddAuthentication(options)
 	end
 
 	function Verification:Close()
-		for _, conn in pairs(Storage.Connections) do
+		for _, conn in pairs(Storage.Authentication) do
 			if typeof(conn) == "RBXScriptConnection" then
 				conn:Disconnect()
 			end
 		end
-
+		
+		Storage.AuthenticationConfiguration.IsBusy = false
+		
 		TS:Create(Verification.Frame, Tinfo3, {
 			GroupTransparency = 1,
 			Rotation = math.random(-15, 15),
@@ -7397,7 +7586,7 @@ function Library:AddAuthentication(options)
 		end)
 	end
 
-	TS:Create(Verification.Frame, Tinfo, {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+	TS:Create(Verification.Frame, Tinfo, {Rotation = 0, Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
 
 	if hasIcon then
 		local iconLabel = Verification.Frame.Icon
@@ -7444,25 +7633,29 @@ function Library:AddAuthentication(options)
 		end
 	end
 
-	Storage.Connections.DiscordButton = handler.Footer.DiscordButton.TextButton.MouseButton1Click:Connect(onDiscordClicked)
+	Storage.Authentication.DiscordButton = handler.Footer.DiscordButton.TextButton.MouseButton1Click:Connect(onDiscordClicked)
 
 	local function onToggleMethod()
+		if options.Lock == true then return end
 		Verification._activeMethod = Verification._activeMethod == "Key" and "Token" or "Key"
 		toggleBtn.Text = Verification._activeMethod == "Token" and "Use Key" or "Sign In"
-		box.PlaceholderText = Verification._activeMethod == "Token" and "Token" or "Key"
+		box.PlaceholderText = Verification._activeMethod == "Token" and "Username" or "Key"
+		box.Size = UDim2.new(0, Verification._activeMethod == "Token" and 113 or 226, 0, 20)
 		box.Text = ""
+		box2.Text = ""
+		box2.Visible = Verification._activeMethod == "Token"
 		setFillColor(COLORS.neutral)
 	end
 
-	Storage.Connections.ToggleMethodButton = toggleBtn.MouseButton1Click:Connect(onToggleMethod)
+	Storage.Authentication.ToggleMethodButton = toggleBtn.MouseButton1Click:Connect(onToggleMethod)
 
 	local submitted = false
 	local function onSubmitPressed()
-		if submitted or box.Text == "" then return end
-
-		Verification._lastInput = box.Text
+		if submitted then return end
 
 		if Verification._activeMethod == "Key" then
+			if box.Text == "" then return end
+			Verification._lastInput = box.Text
 			Verification._isAuthenticated = Verification._lastInput == Verification._secretKey
 			if not Verification._isAuthenticated then return end
 			submitted = true
@@ -7474,6 +7667,8 @@ function Library:AddAuthentication(options)
 			Verification:Close()
 
 		elseif Verification._activeMethod == "Token" then
+			if box.Text == "" or box2.Text == "" then return end
+			Verification._lastInput = { Username = box.Text, Password = box2.Text }
 			Verification._isAuthenticated = false
 
 			if Verification._onSubmit then
@@ -7481,15 +7676,19 @@ function Library:AddAuthentication(options)
 			end
 		end
 	end
+	
+	Storage.Authentication.Close = Close.MouseButton1Click:Connect(function()
+		Verification:Close()
+	end)
+	Storage.Authentication.SubmitButton = inputField.SubmitButton.MouseButton1Click:Connect(onSubmitPressed)
 
-	Storage.Connections.SubmitButton = inputField.SubmitButton.MouseButton1Click:Connect(onSubmitPressed)
-
-	Storage.Connections.InputFocused = box.Focused:Connect(function()
+	-- Box (username/key) connections
+	Storage.Authentication.InputFocused = box.Focused:Connect(function()
 		TS:Create(activeFill, Tinfo2, {Size = COLORS.expanded}):Play()
 	end)
 
-	Storage.Connections.InputFocusLost = box.FocusLost:Connect(function(enterPressed)
-		if box.Text == "" then
+	Storage.Authentication.InputFocusLost = box.FocusLost:Connect(function(enterPressed)
+		if box.Text == "" and box2.Text == "" then
 			TS:Create(activeFill, Tinfo2, {Size = COLORS.collapsed}):Play()
 		end
 		if enterPressed then
@@ -7497,7 +7696,41 @@ function Library:AddAuthentication(options)
 		end
 	end)
 
-	Storage.Connections.InputChanged = box:GetPropertyChangedSignal("Text"):Connect(function()
+	-- Box2 (password) connections
+	Storage.Authentication.Input2Focused = box2.Focused:Connect(function()
+		TS:Create(activeFill, Tinfo2, {Size = COLORS.expanded}):Play()
+	end)
+
+	Storage.Authentication.Input2FocusLost = box2.FocusLost:Connect(function(enterPressed)
+		if box.Text == "" and box2.Text == "" then
+			TS:Create(activeFill, Tinfo2, {Size = COLORS.collapsed}):Play()
+		end
+		if enterPressed then
+			onSubmitPressed()
+		end
+	end)
+	
+	-- Password masking: show dots in label, hide real text
+	Storage.Authentication.Input2Changed = box2:GetPropertyChangedSignal("Text"):Connect(function()
+		local text = box2.Text
+		if text ~= "" then
+			box2.TextTransparency = 1
+			box2Label.Text = string.rep("•", #text)
+		else
+			box2.TextTransparency = 0
+			box2Label.Text = ""
+		end
+	end)
+
+	-- When box2 loses focus, keep the real text hidden if filled
+	Storage.Authentication.Input2TextSync = box2.Focused:Connect(function()
+		if box2.Text ~= "" then
+			box2.TextTransparency = 1
+		end
+	end)
+
+	-- Fill color feedback (Key mode only)
+	Storage.Authentication.InputChanged = box:GetPropertyChangedSignal("Text"):Connect(function()
 		if Verification._activeMethod == "Token" then return end
 		local text = box.Text
 		if text == Verification._secretKey then
