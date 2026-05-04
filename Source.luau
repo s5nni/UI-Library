@@ -41,7 +41,9 @@ local VG = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 -- Info
 
-local DeviceId = "Unknown"
+local ChannelName = "Unknown"
+local ChannelVersion = 0
+local DeviceType = "Unknown"
 local HardwareId = "Unknown"
 
 -- Variables
@@ -137,153 +139,317 @@ function Library:FormatText(text1, text2, color)
 end
 
 function Library:Arraylist()
+	local TweenService = game:GetService("TweenService")
+	local TWEEN_INFO   = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local ITEM_HEIGHT  = 25
+	local ITEM_SPACING = 5
+
 	local Arraylist = {
-		Type = "Arraylist",
-		List = {},
+		Type   = "Arraylist",
+		List   = {},    -- [key] = entry { text, value, textcolor, valuecolor, instance }
+		_order = {},    -- ordered list of keys
+		_style = nil,   -- { style, sort }
 	}
 
 	Arraylist.Frame = SelfModules.UI.Create("Frame", {
-		Name = "Arraylist",
+		Name                 = "Arraylist",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, 10),
-		Size = UDim2.new(1, -20, 1, -20),
-		SelfModules.UI.Create("UIListLayout", {
-			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 2)
-		})
+		Position             = UDim2.new(0, 10, 0, 10),
+		Size                 = UDim2.new(1, -20, 1, -20),
 	})
-
 	Arraylist.Frame.Parent = ScreenGui
 
-	function Arraylist:Add(name, options)
-		if Arraylist.List[name] == nil then
-			local ArrayItem = SelfModules.UI.Create("Frame", {
-				Name = name,
-				BackgroundColor3 = Library.Theme.TopbarColor,
-				BackgroundTransparency = options.Background and options.Transparency or options.Background and 0.35 or 1,
-				Position = UDim2.new(0, 0, 0, 0),
-				Size = UDim2.new(0, 0, 0, 0),
+	-- --------------------------------------------------------
+	-- Internal helpers
+	-- --------------------------------------------------------
 
-				SelfModules.UI.Create("UIStroke", {
-					Name = "Stroke",
-					Thickness = 1.7,
-					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-					Transparency = 0.8,
-					Enabled = true
-				}),
+	local function buildText(entry)
+		local tc = entry.textcolor
+		local vc = entry.valuecolor
+		return string.format(
+			'<font color="rgb(%d,%d,%d)">%s</font>  <font color="rgb(%d,%d,%d)">%s</font>',
+			math.round(tc.R * 255), math.round(tc.G * 255), math.round(tc.B * 255), entry.text,
+			math.round(vc.R * 255), math.round(vc.G * 255), math.round(vc.B * 255), entry.value
+		)
+	end
 
-				SelfModules.UI.Create("Frame", {
-					Name = "Line",
-					BackgroundColor3 = options.Color or Library.Theme.TextColor,
-					Position = UDim2.new(1, 0, 0, 0),
-					Size = UDim2.new(0.1, 0, 1, 0),
+	local function measureWidth(entry)
+		local plain = entry.text .. "  " .. entry.value
+		return TXS:GetTextSize(plain, 16, Enum.Font.SourceSans, Vector2.new(1000, 1000)).X + 15
+	end
 
-					SelfModules.UI.Create("Frame", {
-						Name = "Fill",
-						Size = UDim2.new(0.5, 0, 1, 0),
-						BackgroundColor3 = options.Color or Library.Theme.TextColor,
-						BorderSizePixel = 0,
-					}),
+	local function slotY(index)
+		return (index - 1) * (ITEM_HEIGHT + ITEM_SPACING)
+	end
 
-					SelfModules.UI.Create("ImageLabel", {
-						Name = "Glow",
-						BackgroundTransparency = 1,
-						Position = UDim2.new(0, -8, 0, -8),
-						Size = UDim2.new(1, 16, 1, 16),
-						Image = "rbxassetid://10822615828",
-						ImageTransparency = 0.65,
-						ImageColor3 = options.Color or Library.Theme.TextColor,
-						ScaleType = Enum.ScaleType.Slice,
-						SliceCenter = Rect.new(99, 99, 99, 99),
-						ZIndex = 2,
-					}),
-				}, UDim.new(0, 5)),
+	local function createInstance(key, entry)
+		local w = measureWidth(entry)
 
-				SelfModules.UI.Create("Frame", {
-					Name = "Frame2",
-					BackgroundTransparency = 1,
-					Position = UDim2.new(0, 0, 0, 0),
-					Size = UDim2.new(1, 0, 1, 0),
-					ClipsDescendants = true,
+		local Item = Instance.new("Frame")
+		Item.Name             = key
+		Item.AnchorPoint      = Vector2.new(1, 0)
+		Item.Size             = UDim2.new(0, w, 0, ITEM_HEIGHT)
+		Item.Position         = UDim2.new(1.5, 0, 0, 0)
+		Item.BackgroundColor3 = Library.Theme.TopbarColor
+		Item.BorderSizePixel  = 0
+		Item.Parent           = Arraylist.Frame
 
-					SelfModules.UI.Create("TextLabel", {
-						Name = "Label",
-						BackgroundTransparency = 1,
-						Position = UDim2.new(0, -8, 0, 0),
-						Size = UDim2.new(1, 0, 1, 0),
-						Font = Enum.Font.SourceSans,
-						Text = options.Text or "",
-						RichText = options.RichText or false,
-						TextColor3 = options.TextColor or Color3.fromRGB(255, 255, 255),
-						TextSize = 16,
-						TextXAlignment = Enum.TextXAlignment.Right,
-					})
-				})
-			}, UDim.new(0, 3))
+		local UICorner = Instance.new("UICorner")
+		UICorner.CornerRadius = UDim.new(0, 5)
+		UICorner.Parent       = Item
 
-			local textSize = TXS:GetTextSize(ArrayItem.Frame2.Label.Text, ArrayItem.Frame2.Label.TextSize, ArrayItem.Frame2.Label.Font, Vector2.new(0, 25)).X + 16
-			tween(ArrayItem, 0.5, { Size = UDim2.new(0, textSize, 0, 25) })
-			ArrayItem.Parent = Arraylist.Frame
-			Arraylist.List[name] = ArrayItem
+		local UIStroke = Instance.new("UIStroke")
+		UIStroke.Thickness        = 1.7
+		UIStroke.ApplyStrokeMode  = Enum.ApplyStrokeMode.Border
+		UIStroke.Transparency     = 0.8
+		UIStroke.Parent           = Item
 
-			local sortedItems = {}
-			for itemName, item in pairs(Arraylist.List) do
-				table.insert(sortedItems, item)
+		local Holder = Instance.new("Frame")
+		Holder.Name             = "Holder"
+		Holder.Position         = UDim2.new(0, 1, 0, 1)
+		Holder.Size             = UDim2.new(1, -2, 1, -2)
+		Holder.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		Holder.BorderSizePixel  = 0
+		Holder.ClipsDescendants = true
+		Holder.Parent           = Item
+
+		local UICorner2 = Instance.new("UICorner")
+		UICorner2.CornerRadius = UDim.new(0, 5)
+		UICorner2.Parent       = Holder
+
+		local TextLabel = Instance.new("TextLabel")
+		TextLabel.Name               = "TextLabel"
+		TextLabel.Size               = UDim2.new(1, -8, 1, 0)
+		TextLabel.BackgroundTransparency = 1
+		TextLabel.BorderSizePixel    = 0
+		TextLabel.RichText           = true
+		TextLabel.Text               = buildText(entry)
+		TextLabel.TextColor3         = entry.textcolor
+		TextLabel.TextSize           = 16
+		TextLabel.FontFace           = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+		TextLabel.TextXAlignment     = Enum.TextXAlignment.Right
+		TextLabel.Parent             = Holder
+
+		local Line = Instance.new("Frame")
+		Line.Name             = "Line"
+		Line.Position         = UDim2.new(1, -4, 0.2, 0)
+		Line.Size             = UDim2.new(0, 6, 0.6, 0)
+		Line.BackgroundColor3 = entry.textcolor
+		Line.BorderSizePixel  = 0
+		Line.Parent           = Item
+
+		local UICorner3 = Instance.new("UICorner")
+		UICorner3.CornerRadius = UDim.new(1, 0)
+		UICorner3.Parent       = Line
+
+		local ImageLabel = Instance.new("ImageLabel")
+		ImageLabel.Name                  = "ImageLabel"
+		ImageLabel.Position              = UDim2.new(0, -5, 0, -5)
+		ImageLabel.Size                  = UDim2.new(1, 10, 1, 10)
+		ImageLabel.BackgroundTransparency = 1
+		ImageLabel.BorderSizePixel       = 0
+		ImageLabel.ZIndex                = -1
+		ImageLabel.Image                 = "rbxassetid://10822615828"
+		ImageLabel.ImageColor3           = entry.textcolor
+		ImageLabel.ImageTransparency     = 0.8
+		ImageLabel.ScaleType             = Enum.ScaleType.Slice
+		ImageLabel.SliceCenter = Rect.new(99, 99, 99, 99)
+		ImageLabel.Parent                = Line
+
+		local Glow = Instance.new("ImageLabel")
+		Glow.Name                   = "Glow"
+		Glow.Position               = UDim2.new(0, -5, 0, -5)
+		Glow.Size                   = UDim2.new(1, 10, 1, 10)
+		Glow.BackgroundTransparency = 1
+		Glow.BorderSizePixel        = 0
+		Glow.ZIndex                 = -1
+		Glow.Image                  = "rbxassetid://10822615828"
+		Glow.ImageColor3            = Library.Theme.TopbarColor
+		Glow.ImageTransparency      = 0.5
+		Glow.ScaleType              = Enum.ScaleType.Slice
+		Glow.SliceCenter = Rect.new(99, 99, 99, 99)
+		Glow.SliceScale             = 0.1
+		Glow.Parent                 = Item
+
+		return Item
+	end
+
+	-- --------------------------------------------------------
+	-- Sort & reflow
+	-- --------------------------------------------------------
+
+	local function sort(self)
+		local keys = {}
+		for key in pairs(self.List) do
+			table.insert(keys, key)
+		end
+
+		local style = self._style and self._style.style
+		local s     = self._style and self._style.sort
+
+		if style == "alphabet" then
+			if s == "increasing" then
+				table.sort(keys, function(a, b)
+					return self.List[a].text:lower() < self.List[b].text:lower()
+				end)
+			elseif s == "decreasing" then
+				table.sort(keys, function(a, b)
+					return self.List[a].text:lower() > self.List[b].text:lower()
+				end)
 			end
 
-			table.sort(sortedItems, function(a, b)
-				return a.Frame2.Label.TextBounds.X > b.Frame2.Label.TextBounds.X
-			end)
+		elseif style == "length" then
+			if s == "increasing" then
+				table.sort(keys, function(a, b)
+					local ia = self.List[a].instance
+					local ib = self.List[b].instance
+					return (ia and ia.Size.X.Offset or 0) > (ib and ib.Size.X.Offset or 0)
+				end)
+			elseif s == "decreasing" then
+				table.sort(keys, function(a, b)
+					local ia = self.List[a].instance
+					local ib = self.List[b].instance
+					return (ia and ia.Size.X.Offset or 0) < (ib and ib.Size.X.Offset or 0)
+				end)
+			end
+		end
 
-			for index, item in ipairs(sortedItems) do
-				item.LayoutOrder = index
+		self._order = keys
+	end
+
+	local function reflow(self)
+		for i, key in ipairs(self._order) do
+			local entry = self.List[key]
+			if entry and entry.instance then
+				TweenService:Create(entry.instance, TWEEN_INFO, {
+					Position = UDim2.new(1, 0, 0, slotY(i))
+				}):Play()
 			end
 		end
 	end
 
-	function Arraylist:Edit(name, options)
-		local ArrayItem = Arraylist.List[name]
-		if ArrayItem then
-			if options.Text then
-				ArrayItem.Frame2.Label.Text = options.Text
+	-- --------------------------------------------------------
+	-- API
+	-- --------------------------------------------------------
+
+	function Arraylist:Add(key, options)
+		assert(type(key) == "string", "[Arraylist] key must be a string.")
+		if self.List[key] then return end
+
+		local entry = {
+			text       = options.text       or options.Text       or key,
+			value      = options.value      or options.Value      or "",
+			textcolor  = options.textcolor  or options.TextColor  or Library.Theme.TextColor,
+			valuecolor = options.valuecolor or options.ValueColor or Library.Theme.TextColor,
+			instance   = nil,
+		}
+
+		self.List[key] = entry
+		sort(self)
+
+		local index   = table.find(self._order, key)
+		local targetY = slotY(index)
+		local item    = createInstance(key, entry)
+		entry.instance = item
+
+		item.Position = UDim2.new(1.5, 0, 0, targetY)
+		TweenService:Create(item, TWEEN_INFO, {
+			Position = UDim2.new(1, 0, 0, targetY)
+		}):Play()
+
+		reflow(self)
+	end
+
+	function Arraylist:Edit(key, options)
+		assert(self.List[key], "[Arraylist] key '" .. key .. "' does not exist.")
+
+		local entry         = self.List[key]
+		local structChanged = false
+
+		local fieldMap = {
+			text       = "text",       Text       = "text",
+			value      = "value",      Value      = "value",
+			textcolor  = "textcolor",  TextColor  = "textcolor",
+			valuecolor = "valuecolor", ValueColor = "valuecolor",
+		}
+
+		for optKey, val in pairs(options) do
+			local field = fieldMap[optKey]
+			if field and entry[field] ~= nil then
+				if (field == "text" or field == "value") and entry[field] ~= val then
+					structChanged = true
+				end
+				entry[field] = val
 			end
-			if options.RichText ~= nil then
-				ArrayItem.Frame2.Label.RichText = options.RichText
-			end
-			if options.Background ~= nil then
-				ArrayItem.BackgroundTransparency = options.Background and options.Transparency or options.Background and 0.35 or 1
-			end
-			if options.Color then
-				ArrayItem.Line.Glow.ImageColor3 = options.Color
-			end
-			if options.TextColor then
-				ArrayItem.Frame2.Label.TextColor3 = options.TextColor
-			end
-			local textSize = TXS:GetTextSize(ArrayItem.Frame2.Label.Text, ArrayItem.Frame2.Label.TextSize, ArrayItem.Frame2.Label.Font, Vector2.new(0, 25)).X + 16
-			ArrayItem.Size = UDim2.new(0, textSize, 0, 25)
-			local sortedItems = {}
-			for itemName, item in pairs(Arraylist.List) do
-				table.insert(sortedItems, item)
+		end
+
+		if entry.instance then
+			local tl = entry.instance.Holder:FindFirstChild("TextLabel")
+			if tl then
+				tl.Text       = buildText(entry)
+				tl.TextColor3 = entry.textcolor
 			end
 
-			table.sort(sortedItems, function(a, b)
-				return a.Frame2.Label.TextBounds.X > b.Frame2.Label.TextBounds.X
-			end)
-
-			for index, item in ipairs(sortedItems) do
-				item.LayoutOrder = index
+			local line = entry.instance:FindFirstChild("Line")
+			if line then
+				line.BackgroundColor3 = entry.textcolor
+				local img = line:FindFirstChild("ImageLabel")
+				if img then img.ImageColor3 = entry.textcolor end
 			end
+
+			if structChanged then
+				entry.instance.Size = UDim2.new(0, measureWidth(entry), 0, ITEM_HEIGHT)
+			end
+		end
+
+		if structChanged then
+			sort(self)
+			reflow(self)
 		end
 	end
 
-	function Arraylist:Remove(name)
-		if Arraylist.List[name] ~= nil then
-			local removingitem = Arraylist.List[name]
-			Arraylist.List[name] = nil
-			game:GetService("Debris"):AddItem(removingitem, 0.5)
-			tween(removingitem, 0.5, { Size = UDim2.new(0, 0, 0, 0) })
+	function Arraylist:Remove(key)
+		if not self.List[key] then return end
+
+		local entry    = self.List[key]
+		local instance = entry.instance
+
+		self.List[key] = nil
+		sort(self)
+
+		if instance then
+			local t = TweenService:Create(instance, TWEEN_INFO, {
+				Position = UDim2.new(1.5, 0, 0, instance.Position.Y.Offset)
+			})
+			t:Play()
+			t.Completed:Once(function()
+				instance:Destroy()
+			end)
 		end
+
+		reflow(self)
+	end
+
+	function Arraylist:Exists(key)
+		if self.List[key] then return true end
+		return nil
+	end
+
+	function Arraylist:Style(config)
+		assert(type(config) == "table",                                           "[Arraylist] Style expects a table.")
+		assert(config.style == "alphabet" or config.style == "length",            "[Arraylist] style must be 'alphabet' or 'length'.")
+		assert(config.sort  == "increasing" or config.sort  == "decreasing",      "[Arraylist] sort must be 'increasing' or 'decreasing'.")
+		self._style = config
+		sort(self)
+		reflow(self)
+	end
+
+	function Arraylist:GetOrdered()
+		local result = {}
+		for _, key in ipairs(self._order) do
+			result[#result + 1] = self.List[key]
+		end
+		return result
 	end
 
 	return Arraylist
@@ -798,6 +964,13 @@ function Library:AddWindow(options)
 		tween(Window.Frame.Topbar.Titles.Label2.Label, 0.5, { TextColor3 = accent.R >= 0.75 and accent.G >= 0.75 and accent.B >= 0.75 and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255) })
 
 		for _, tab in next, Window.Tabs do
+			
+			if tab.Button.Selected then
+				tween(tab.Button.Frame.Button, 0.5, { BackgroundColor3 = accent })
+				tween(tab.Button.Frame, 0.5, { BackgroundColor3 = SelfModules.UI.Color.Sub(accent, Color3.fromRGB(45, 45, 45)) })
+				tween(tab.Button.Frame.Glow, 0.5, { ImageColor3 = accent })
+			end
+			
 			for _, section in next, tab.Sections do
 				for _, item in next, section.List do
 					local flag = item.Flag or item.Name
@@ -7245,7 +7418,7 @@ end
 
 function Library:AddAuthentication(options)
 	assert(type(options) == "table", "Authentication requires an options table")
-	assert(options.Key, "Authentication requires options.Key")
+	if options.Key == nil and options.Method == "KEY" and options.Lock == false then error("Key is required on unlocked non-token method") return end
 	assert(options.Method == "Key" or options.Method == "Token", 'Authentication requires options.Method to be "Key" or "Token"')
 
 	local Verification = {
@@ -7256,8 +7429,9 @@ function Library:AddAuthentication(options)
 		_isAuthenticated = false,
 		_lastInput = nil,
 		_onSubmit = nil,
+		_onClose = nil,
 	}
-	
+
 	repeat wait() until Storage.AuthenticationConfiguration.IsBusy == false
 	Storage.AuthenticationConfiguration.IsBusy = true
 
@@ -7301,7 +7475,7 @@ function Library:AddAuthentication(options)
 				Position = UDim2.new(0, 1, 0, 1),
 				BackgroundColor3 = Color3.fromRGB(30, 30, 30),
 				BorderSizePixel = 0,
-				
+
 				SelfModules.UI.Create("TextButton", {
 					Name = "Close",
 					BackgroundTransparency = 1,
@@ -7361,7 +7535,7 @@ function Library:AddAuthentication(options)
 						BorderSizePixel = 0,
 						Visible = options.Method == "Token" and true or false,
 						TextTruncate = Enum.TextTruncate.AtEnd,
-						
+
 						SelfModules.UI.Create("TextLabel", {
 							Name = "Label",
 							BackgroundTransparency = 1,
@@ -7551,6 +7725,11 @@ function Library:AddAuthentication(options)
 		assert(type(callback) == "function", "OnSubmit requires a function")
 		self._onSubmit = callback
 	end
+	
+	function Verification:OnClose(callback)
+		assert(type(callback) == "function", "OnSubmit requires a function")
+		self._onClose = callback
+	end
 
 	function Verification:GetActiveMethod()
 		return self._activeMethod
@@ -7570,9 +7749,9 @@ function Library:AddAuthentication(options)
 				conn:Disconnect()
 			end
 		end
-		
+
 		Storage.AuthenticationConfiguration.IsBusy = false
-		
+
 		TS:Create(Verification.Frame, Tinfo3, {
 			GroupTransparency = 1,
 			Rotation = math.random(-15, 15),
@@ -7677,9 +7856,13 @@ function Library:AddAuthentication(options)
 		end
 	end
 	
-	Storage.Authentication.Close = Close.MouseButton1Click:Connect(function()
-		Verification:Close()
-	end)
+	local function onClosePressed()
+		if Verification._onClose then
+			Verification._onClose()
+		end
+	end
+
+	Storage.Authentication.Close = Close.MouseButton1Click:Connect(onClosePressed)
 	Storage.Authentication.SubmitButton = inputField.SubmitButton.MouseButton1Click:Connect(onSubmitPressed)
 
 	-- Box (username/key) connections
@@ -7709,7 +7892,7 @@ function Library:AddAuthentication(options)
 			onSubmitPressed()
 		end
 	end)
-	
+
 	-- Password masking: show dots in label, hide real text
 	Storage.Authentication.Input2Changed = box2:GetPropertyChangedSignal("Text"):Connect(function()
 		local text = box2.Text
