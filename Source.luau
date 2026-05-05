@@ -7941,6 +7941,10 @@ function Library:AddRadar()
 			Players = true,
 			NPCs    = true,
 			Self    = true,
+			Custom  = true,               -- NEW: track custom locations
+		},
+		CustomLocations = {
+			-- Example: ["Exit"] = { Position = Vector3.new(100,0,100), Color = Color3.fromRGB(255,170,255), Title = false, TitleText = "Exit" }
 		},
 		Display = {
 			Name = {
@@ -7989,6 +7993,7 @@ function Library:AddRadar()
 			IsDraggable                  = true,
 			IsInteractiveWithScrollWheel = false,
 			RenderWalls                  = true,
+			IgnoreNonCollideWalls        = false,  -- NEW
 		},
 	}
 
@@ -8002,6 +8007,7 @@ function Library:AddRadar()
 		players               = true,
 		npcs                  = true,
 		show_self             = true,
+		custom                = true,  -- NEW
 		players_name          = true,
 		npcs_name             = true,
 		self_name             = true,
@@ -8033,6 +8039,7 @@ function Library:AddRadar()
 		draggable             = true,
 		scroll_zoom           = false,
 		render_walls          = true,
+		ignore_non_collide    = false,  -- NEW
 		-- legacy internals kept for behaviour
 		max_distance          = 500,
 		fade_with_distance    = true,
@@ -8090,10 +8097,13 @@ function Library:AddRadar()
 		Internal.draggable             = S.IsDraggable
 		Internal.scroll_zoom           = S.IsInteractiveWithScrollWheel
 		Internal.render_walls          = S.RenderWalls
+		Internal.ignore_non_collide    = S.IgnoreNonCollideWalls  -- NEW
+		Internal.render_walls_count    = S.RenderWallsCount
 
 		Internal.players               = T.Players
 		Internal.npcs                  = T.NPCs
 		Internal.show_self             = T.Self
+		Internal.custom                = T.Custom           -- NEW
 
 		Internal.players_name          = D.Name.Players
 		Internal.npcs_name             = D.Name.NPCs
@@ -8250,6 +8260,7 @@ function Library:AddRadar()
 	-- ── Radar Core ─────────────────────────────────────────────────────────
 	local RadarSystem = {}
 	RadarSystem.Blips       = {}
+	RadarSystem.CustomBlips = {}  -- NEW: track custom location blips
 	RadarSystem.WallBlips   = {}
 	RadarSystem.Connections = {}
 
@@ -8296,10 +8307,11 @@ function Library:AddRadar()
 		return true
 	end
 
-	function RadarSystem:CreateBlip(model, isNPC, playerObj)
+	function RadarSystem:CreateBlip(model, isNPC, playerObj, isCustom)  -- MODIFIED: added isCustom parameter
 		local isLocal  = (playerObj == LP)
 		local dotSize  = Internal.dot_size
-		local dotColor = isLocal and Internal.self_color
+		local dotColor = isCustom and (Config.CustomLocations[model] and Config.CustomLocations[model].Color or Color3.fromRGB(255,170,255))
+			or isLocal and Internal.self_color
 			or (isNPC and Internal.npcs_color or Internal.players_color)
 		local txtSize  = isLocal and Internal.text_sizes_self
 			or (isNPC and Internal.text_sizes_npcs or Internal.text_sizes_players)
@@ -8313,7 +8325,7 @@ function Library:AddRadar()
 
 		local dot = Instance.new("Frame")
 		dot.Size             = UDim2.new(0, dotSize, 0, dotSize)
-		dot.Position         = UDim2.new(0.5, -dotSize/2, 0.5, -dotSize/2)
+		dot.Position         = UDim2.new(0.5, -dotSize/2, 0.5, -dotSize/2)  -- centered at 0,0 of the 1x1px frame
 		dot.BackgroundColor3 = dotColor
 		dot.BorderSizePixel  = 0
 		dot.ZIndex           = 6
@@ -8339,7 +8351,8 @@ function Library:AddRadar()
 		nameLabel.Size                   = UDim2.new(0, 80, 0, 12)
 		nameLabel.Position               = UDim2.new(0.5, -40, 0, dotSize/2 + 2)
 		nameLabel.BackgroundTransparency = 1
-		nameLabel.Text                   = isNPC and model.Name
+		nameLabel.Text                   = isCustom and (Config.CustomLocations[model] and Config.CustomLocations[model].TitleText or "")
+			or isNPC and model.Name
 			or (playerObj and playerObj.DisplayName or model.Name)
 		nameLabel.TextColor3             = Library.Theme.TextColor
 		nameLabel.TextSize               = txtSize
@@ -8392,10 +8405,11 @@ function Library:AddRadar()
 			HealthLabel  = healthLabel,
 			DistanceLabel= distLabel,
 			HeightLabel  = heightLabel,
-			Target       = model,
+			Target       = model,       -- for custom blips, model is the custom name string
 			IsNPC        = isNPC,
 			Player       = playerObj,
 			IsLocal      = isLocal,
+			IsCustom     = isCustom,    -- NEW: flag
 		}
 	end
 
@@ -8405,15 +8419,143 @@ function Library:AddRadar()
 		return cx, cy, (x ~= cx or y ~= cy)
 	end
 
+	-- Helper to keep dot centered after size change
+	local function CenterDot(blipData)
+		local dot = blipData.Dot
+		if not dot then return end
+		local size = dot.AbsoluteSize.X  -- assume square, same as Y
+		dot.Position = UDim2.new(0.5, -size/2, 0.5, -size/2)
+	end
+
 	function RadarSystem:UpdateBlip(blipData, localPos, cameraCF, halfW, halfH)
 		local model    = blipData.Target
+		local isCustom = blipData.IsCustom
+
+		-- ── Handle custom location blip ──
+		if isCustom then
+			if not Internal.custom then
+				blipData.Frame.Visible = false
+				return
+			end
+			local customData = Config.CustomLocations[model]
+			if not customData then
+				blipData.Frame.Visible = false
+				return
+			end
+
+			local targetPos = customData.Position
+			local distance  = (targetPos - localPos).Magnitude
+			if distance > Internal.max_distance then
+				blipData.Frame.Visible = false
+				return
+			end
+			-- FOV check (same as entities)
+			if Internal.angle_radius < 360 then
+				local relativeFlat = Vector3.new(targetPos.X - localPos.X, 0, targetPos.Z - localPos.Z).Unit
+				local forward
+				if Internal.rotate_handler == "Camera" then
+					forward = cameraCF.LookVector
+				else
+					local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+					forward = lr and lr.CFrame.LookVector or cameraCF.LookVector
+				end
+				forward = Vector3.new(forward.X, 0, forward.Z).Unit
+				local dot = forward:Dot(relativeFlat)
+				if dot < math.cos(math.rad(Internal.angle_radius / 2)) then
+					blipData.Frame.Visible = false
+					return
+				end
+			end
+			-- Wall check (optional, same as entities)
+			if Internal.ignore_behind_walls then
+				local dir = targetPos - localPos
+				local rayParams = RaycastParams.new()
+				rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+				rayParams.FilterDescendantsInstances = {LP.Character}
+				local result = WS:Raycast(localPos, dir, rayParams)
+				if result and result.Distance < distance - 2 then
+					blipData.Frame.Visible = false
+					return
+				end
+			end
+			-- Position calculation
+			local relativePos = targetPos - localPos
+			local yaw
+			if Internal.rotation_enabled then
+				if Internal.rotate_handler == "Camera" then
+					_, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+				else
+					local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+					if lr then
+						_, yaw, _ = lr.CFrame:ToEulerAnglesYXZ()
+					else
+						_, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+					end
+				end
+				relativePos = CFrame.Angles(0, -yaw, 0) * relativePos
+			end
+			local scale  = math.min(halfW, halfH) / Internal.zoom
+			local radarX = relativePos.X * scale
+			local radarY = relativePos.Z * scale
+			local clampedX, clampedY, wasClamped
+			if Internal.clip_dots then
+				clampedX, clampedY, wasClamped = self:SquareClamp(radarX, radarY, halfW - 8, halfH - 8)
+			else
+				clampedX, clampedY, wasClamped = radarX, radarY, false
+			end
+			blipData.Frame.Position = UDim2.new(0, halfW + clampedX, 0, halfH + clampedY)
+
+			-- Height indicator (relative Y)
+			if Internal.height_indicator and blipData.HeightLabel then
+				local diff = targetPos.Y - localPos.Y
+				blipData.HeightLabel.Text = math.abs(diff) > Internal.height_threshold and (diff > 0 and "▲" or "▼") or ""
+			end
+			-- Opacity / fade
+			local opacity = 1
+			if Internal.fade_with_distance then
+				opacity = math.max(1 - (distance / Internal.max_distance), Internal.min_opacity)
+			end
+			-- Color (heater or custom)
+			if Internal.heater_colors then
+				blipData.Dot.BackgroundColor3 = HeaterColor(distance, Internal.max_distance)
+			else
+				blipData.Dot.BackgroundColor3 = customData.Color
+			end
+			blipData.Dot.BackgroundTransparency = 1 - opacity
+			-- Text
+			blipData.NameLabel.Visible = customData.Title or false
+			blipData.NameLabel.TextTransparency = 1 - opacity
+			local st = blipData.NameLabel:FindFirstChildOfClass("UIStroke")
+			if st then st.Transparency = 1 - opacity end
+			blipData.HealthLabel.Visible = false
+			blipData.DistanceLabel.Visible = true
+			blipData.DistanceLabel.Text = tostring(math.floor(distance)) .. " studs"
+			blipData.DistanceLabel.TextTransparency = 1 - opacity
+			local dSt = blipData.DistanceLabel:FindFirstChildOfClass("UIStroke")
+			if dSt then dSt.Transparency = 1 - opacity end
+			if blipData.HeightLabel then
+				blipData.HeightLabel.TextTransparency = 1 - opacity
+			end
+			-- Dot size
+			if wasClamped then
+				local ss = Internal.dot_size * 0.6
+				blipData.Dot.Size = UDim2.new(0, ss, 0, ss)
+				CenterDot(blipData)  -- re-center after size change
+			else
+				blipData.Dot.Size = UDim2.new(0, Internal.dot_size, 0, Internal.dot_size)
+				CenterDot(blipData)
+			end
+			blipData.Frame.Visible = true
+			return
+		end
+
+		-- ── Normal entity blip (unchanged, except added dot centering) ──
 		local rootPart = self:GetRootPart(model)
 		if not rootPart or not blipData.Frame then
 			if blipData.Frame then blipData.Frame.Visible = false end
 			return
 		end
 
-		-- Local-player blip
 		if blipData.IsLocal then
 			blipData.Frame.Position = UDim2.new(0, halfW, 0, halfH)
 			blipData.Frame.Visible  = Internal.show_self and Internal.enabled
@@ -8431,7 +8573,6 @@ function Library:AddRadar()
 			return
 		end
 
-		-- Filters before positioning
 		if blipData.IsNPC and not Internal.npcs then blipData.Frame.Visible = false return end
 		if not blipData.IsNPC and not Internal.players then blipData.Frame.Visible = false return end
 
@@ -8458,7 +8599,6 @@ function Library:AddRadar()
 			return
 		end
 
-		-- Angle / FOV check
 		if Internal.angle_radius < 360 then
 			local relativeFlat = Vector3.new(targetPos.X - localPos.X, 0, targetPos.Z - localPos.Z).Unit
 			local forward
@@ -8476,7 +8616,6 @@ function Library:AddRadar()
 			end
 		end
 
-		-- Wall check
 		if Internal.ignore_behind_walls then
 			local dir = targetPos - localPos
 			local rayParams = RaycastParams.new()
@@ -8489,7 +8628,6 @@ function Library:AddRadar()
 			end
 		end
 
-		-- Position on radar
 		local relativePos = targetPos - localPos
 		local yaw
 		if Internal.rotation_enabled then
@@ -8519,20 +8657,17 @@ function Library:AddRadar()
 
 		blipData.Frame.Position = UDim2.new(0, halfW + clampedX, 0, halfH + clampedY)
 
-		-- Height indicator
 		if Internal.height_indicator and blipData.HeightLabel then
 			local diff = targetPos.Y - localPos.Y
 			blipData.HeightLabel.Text =
 				math.abs(diff) > Internal.height_threshold and (diff > 0 and "▲" or "▼") or ""
 		end
 
-		-- Opacity / fade
 		local opacity = 1
 		if Internal.fade_with_distance then
 			opacity = math.max(1 - (distance / Internal.max_distance), Internal.min_opacity)
 		end
 
-		-- Heater colors
 		if Internal.heater_colors then
 			blipData.Dot.BackgroundColor3 = HeaterColor(distance, Internal.max_distance)
 		else
@@ -8541,7 +8676,6 @@ function Library:AddRadar()
 
 		blipData.Dot.BackgroundTransparency = 1 - opacity
 
-		-- Labels
 		local showName = blipData.IsNPC and Internal.npcs_name or Internal.players_name
 		blipData.NameLabel.Visible = showName
 		blipData.NameLabel.TextTransparency = 1 - opacity
@@ -8568,12 +8702,13 @@ function Library:AddRadar()
 
 		blipData.Frame.Visible = true
 
-		-- Clamped dot size
 		if wasClamped then
 			local ss = Internal.dot_size * 0.6
 			blipData.Dot.Size = UDim2.new(0, ss, 0, ss)
+			CenterDot(blipData)  -- FIX: re-center dot
 		else
 			blipData.Dot.Size = UDim2.new(0, Internal.dot_size, 0, Internal.dot_size)
+			CenterDot(blipData)
 		end
 	end
 
@@ -8599,11 +8734,24 @@ function Library:AddRadar()
 		rayParams.FilterDescendantsInstances = {LP.Character}
 
 		local idx = 0
-		for angle = 0, 359, 15 do
+		local maxDots = Internal.render_walls_count   -- from config, default 200
+
+		-- Cast a ray every 1 degree (360 rays), stop when we have enough hits
+		for angle = 0, 359, 1 do
+			if idx >= maxDots then break end
+
 			local rad = math.rad(angle)
 			local dir = Vector3.new(math.sin(rad), 0, math.cos(rad)) * Internal.max_distance
 			local result = WS:Raycast(localPos, dir, rayParams)
+
 			if result then
+				-- Optionally skip non‑collidable walls
+				if Internal.ignore_non_collide then
+					if result.Instance:IsA("BasePart") and not result.Instance.CanCollide then
+						continue   -- Luau supports goto; otherwise use an if-else block
+					end
+				end
+
 				idx = idx + 1
 				local w = self.WallBlips[idx]
 				if not w then
@@ -8632,7 +8780,10 @@ function Library:AddRadar()
 				end
 				w.Position = UDim2.new(0, halfW + wx, 0, halfH + wy)
 			end
+			continue
 		end
+
+		-- Hide any remaining wall blips beyond the used count
 		for i = idx + 1, #self.WallBlips do
 			self.WallBlips[i].Visible = false
 		end
@@ -8647,21 +8798,17 @@ function Library:AddRadar()
 		local halfW    = Holder.AbsoluteSize.X / 2
 		local halfH    = Holder.AbsoluteSize.Y / 2
 
-		-- Size sync
 		if Internal.size ~= lastSize then
 			lastSize = Internal.size
 			Main.Size = UDim2.new(0, Internal.size + 10, 0, Internal.size + 40)
 		end
 
-		-- Position sync
 		Main.Position = UDim2.new(0, Internal.position.X, 0, Internal.position.Y)
 
-		-- Grid rebuild
 		if Internal.grid_size ~= lastGridSize or Internal.grid_enabled ~= lastGridEnabled then
 			buildGrid()
 		end
 
-		-- Grid rotation
 		if Internal.grid_enabled and Internal.rotation_enabled then
 			local y
 			if Internal.rotate_handler == "Camera" then
@@ -8675,7 +8822,6 @@ function Library:AddRadar()
 			GridContainer.Rotation = 0
 		end
 
-		-- Moving grid
 		if Internal.moving_grid then
 			local scale = math.min(halfW, halfH) / Internal.zoom
 			local gridOffsetX = (localPos.X % (Internal.zoom * 2)) * scale
@@ -8685,17 +8831,17 @@ function Library:AddRadar()
 			GridContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
 		end
 
-		-- Targets
+		-- ── Targets collection ──────────────────────────────────────────────
 		local targets    = {}
 		local activeKeys = {}
 
 		if Internal.show_self then
-			table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP })
+			table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP, IsCustom = false })
 		end
 		if Internal.players then
 			for _, player in ipairs(Players:GetPlayers()) do
 				if player ~= LP and player.Character then
-					table.insert(targets, { Model = player.Character, IsNPC = false, Player = player })
+					table.insert(targets, { Model = player.Character, IsNPC = false, Player = player, IsCustom = false })
 				end
 			end
 		end
@@ -8708,24 +8854,39 @@ function Library:AddRadar()
 							if p.Character == obj then isPlayerChar = true; break end
 						end
 						if not isPlayerChar then
-							table.insert(targets, { Model = obj, IsNPC = true, Player = nil })
+							table.insert(targets, { Model = obj, IsNPC = true, Player = nil, IsCustom = false })
 						end
 					end
 				end
 			end
 		end
 
-		for _, target in ipairs(targets) do
-			local key = tostring(target.Model)
-			activeKeys[key] = true
-
-			if not self.Blips[key] or not self.Blips[key].Frame then
-				self.Blips[key] = self:CreateBlip(target.Model, target.IsNPC, target.Player)
+		-- ── Custom locations ────────────────────────────────────────────────
+		if Internal.custom and Config.CustomLocations then
+			for name, customData in pairs(Config.CustomLocations) do
+				table.insert(targets, { Model = name, IsNPC = false, Player = nil, IsCustom = true })
 			end
-			self:UpdateBlip(self.Blips[key], localPos, cameraCF, halfW, halfH)
 		end
 
-		-- Cleanup dead blips
+		-- ── Update / create blips ────────────────────────────────────────────
+		for _, target in ipairs(targets) do
+			local key = target.IsCustom and ("Custom_" .. target.Model) or tostring(target.Model)
+			activeKeys[key] = true
+
+			if target.IsCustom then
+				if not self.CustomBlips[key] or not self.CustomBlips[key].Frame then
+					self.CustomBlips[key] = self:CreateBlip(target.Model, false, nil, true)
+				end
+				self:UpdateBlip(self.CustomBlips[key], localPos, cameraCF, halfW, halfH)
+			else
+				if not self.Blips[key] or not self.Blips[key].Frame then
+					self.Blips[key] = self:CreateBlip(target.Model, target.IsNPC, target.Player, false)
+				end
+				self:UpdateBlip(self.Blips[key], localPos, cameraCF, halfW, halfH)
+			end
+		end
+
+		-- ── Cleanup dead blips ──────────────────────────────────────────────
 		local toRemove = {}
 		for key, data in pairs(self.Blips) do
 			if not activeKeys[key] or not data.Target or not data.Target.Parent then
@@ -8736,6 +8897,20 @@ function Library:AddRadar()
 			local data = self.Blips[key]
 			if data and data.Frame then data.Frame:Destroy() end
 			self.Blips[key] = nil
+		end
+
+		-- Cleanup custom blips
+		local customToRemove = {}
+		for key, data in pairs(self.CustomBlips) do
+			-- key format "Custom_<name>"
+			if not activeKeys[key] then
+				table.insert(customToRemove, key)
+			end
+		end
+		for _, key in ipairs(customToRemove) do
+			local data = self.CustomBlips[key]
+			if data and data.Frame then data.Frame:Destroy() end
+			self.CustomBlips[key] = nil
 		end
 
 		-- Walls
@@ -8749,7 +8924,6 @@ function Library:AddRadar()
 		assert(type(t) == "table", "[Radar:SetConfig] expects a table")
 		DeepMerge(Config, t)
 		SyncInternal()
-		-- Immediate side-effects
 		Main.Visible = Internal.enabled
 		UpdateDraggable()
 	end
@@ -8758,7 +8932,7 @@ function Library:AddRadar()
 		return DeepCopy(Config)
 	end
 
-	function RadarAPI:GetRadar()
+	function RadarAPI:GetRadarFrame()
 		return Main
 	end
 
@@ -8770,6 +8944,16 @@ function Library:AddRadar()
 		end
 		Config.Settings.Enabled = Internal.enabled
 		Main.Visible = Internal.enabled
+	end
+
+	function RadarAPI:AddCustom(name, data)
+		if type(name) ~= "string" or type(data) ~= "table" then return end
+		Config.CustomLocations[name] = data
+		-- No need to sync internals; radar will pick it up next update
+	end
+
+	function RadarAPI:RemoveCustom(name)
+		Config.CustomLocations[name] = nil
 	end
 
 	function RadarAPI:Destroy()
@@ -8791,6 +8975,10 @@ function Library:AddRadar()
 			if data.Frame then data.Frame:Destroy() end
 		end
 		RadarSystem.Blips = {}
+		for _, data in pairs(RadarSystem.CustomBlips) do
+			if data.Frame then data.Frame:Destroy() end
+		end
+		RadarSystem.CustomBlips = {}
 	end))
 
 	table.insert(RadarSystem.Connections, Players.PlayerRemoving:Connect(function(player)
