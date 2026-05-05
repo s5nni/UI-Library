@@ -7928,5 +7928,453 @@ function Library:AddAuthentication(options)
 	return Verification
 end
 
+function Library:AddRadar()
+	local Players    = game:GetService("Players")
+	local RunService = game:GetService("RunService")
+	local WS         = game:GetService("Workspace")
+	local LP         = Players.LocalPlayer
+
+	-- ── Private config (never exposed externally) ───────────────────────────
+	local Config = {
+		-- Visibility
+		Players     = true,
+		NPCS        = true,
+		PlayersName = true,
+		NPCSName    = true,
+
+		-- Colors
+		PlayersColor     = Color3.fromRGB(80,  200, 255),
+		NPCsColor        = Color3.fromRGB(100, 255,  80),
+		LocalPlayerColor = Color3.fromRGB(255, 255, 255),
+
+		-- Mechanics
+		ZOOM             = 80,
+		MAX_DISTANCE     = 500,
+		ROTATION_ENABLED = true,   -- true = camera-relative | false = north-up fixed
+
+		-- Canvas
+		Size = 200,   -- radar square size in pixels (80–600)
+
+		-- Grid
+		GridEnabled = true,
+		GridSize    = 10,    -- cells across (2–30)
+		GridStatic  = false, -- false = grid rotates with camera | true = always axis-aligned
+
+		-- Dots
+		PlayerDotSize      = 5,
+		NPCDotSize         = 4,
+		LocalPlayerDotSize = 6,
+
+		-- Names
+		NameTextSize = 9,
+		NameFont     = Enum.Font.Gotham,
+
+		-- Height indicator
+		HeightIndicator = true,
+		HeightThreshold = 30,
+
+		-- Distance fade
+		FadeWithDistance = true,
+		MinOpacity       = 0.3,
+
+		-- NPC ignore (exact name match only)
+		IgnoredNPCNames = { "Model", "Rig" },
+	}
+	local Main = SelfModules.UI.Create("Frame", {
+		Name             = "Radar",
+		BackgroundColor3 = Library.Theme.TopbarColor,
+		BorderSizePixel  = 0,
+		Position         = UDim2.new(0, 20, 1, -(Config.Size + 54)),
+		Size             = UDim2.new(0, Config.Size + 10, 0, Config.Size + 40),
+	}, UDim.new(0, 6))
+	SelfModules.UI.Create("Frame", {
+		BackgroundColor3 = Library.Theme.Accent,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, 2),
+		ZIndex           = 12,
+	}, UDim.new(0, 2)).Parent = Main
+	local TitleBar = SelfModules.UI.Create("Frame", {
+		BackgroundColor3 = Library.Theme.TopbarColor,
+		BorderSizePixel  = 0,
+		Position         = UDim2.new(0, 0, 0, 2),
+		Size             = UDim2.new(1, 0, 0, 22),
+		ZIndex           = 10,
+	})
+	TitleBar.Parent = Main
+	SelfModules.UI.Create("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, -12, 1, 0),
+		Position               = UDim2.new(0, 8, 0, 0),
+		Text                   = ":: RADAR",
+		TextColor3             = Library.Theme.TextColor,
+		TextSize               = 10,
+		Font                   = Enum.Font.GothamBold,
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		ZIndex                 = 11,
+	}).Parent = TitleBar
+	SelfModules.UI.Create("Frame", {
+		BackgroundColor3 = Library.Theme.BackgroundColor,
+		BorderSizePixel  = 0,
+		Position         = UDim2.new(0, 0, 0, 24),
+		Size             = UDim2.new(1, 0, 0, 1),
+	}).Parent = Main
+	local Holder = SelfModules.UI.Create("Frame", {
+		Name             = "Holder",
+		BackgroundColor3 = Library.Theme.BackgroundColor,
+		BorderSizePixel  = 0,
+		ClipsDescendants = true,
+		Position         = UDim2.new(0, 5, 0, 30),
+		Size             = UDim2.new(1, -10, 1, -35),
+	}, UDim.new(0, 5))
+	Holder.Parent = Main
+	local List = SelfModules.UI.Create("CanvasGroup", {
+		Name                   = "List",
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.new(1, 0, 1, 0),
+		GroupTransparency      = 0,
+		ZIndex                 = 3,
+	}, UDim.new(0, 5))
+	List.Parent = Holder
+	local GridContainer = SelfModules.UI.Create("Frame", {
+		Name                   = "GridContainer",
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.new(0.5, 0, 0.5, 0),
+		Size                   = UDim2.new(1.5, 0, 1.5, 0),
+		ZIndex                 = 1,
+	})
+	GridContainer.Parent = List
+	SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
+	Main.Parent = ScreenGui
+	local lastGridSize    = -1
+	local lastGridEnabled = nil
+	local function buildGrid()
+		for _, c in ipairs(GridContainer:GetChildren()) do c:Destroy() end
+		lastGridSize    = Config.GridSize
+		lastGridEnabled = Config.GridEnabled
+		if not Config.GridEnabled then return end
+		local n         = math.clamp(math.floor(Config.GridSize), 2, 30)
+		local gridColor = SelfModules.UI.Color.Add(
+			Library.Theme.BackgroundColor,
+			Color3.fromRGB(16, 16, 16)
+		)
+		for i = 1, n - 1 do
+			local pct = i / n
+			local vl = Instance.new("Frame")
+			vl.BackgroundColor3 = gridColor
+			vl.BorderSizePixel  = 0
+			vl.Position         = UDim2.new(pct, 0, 0, 0)
+			vl.Size             = UDim2.new(0, 1, 1, 0)
+			vl.Parent           = GridContainer
+			local hl = Instance.new("Frame")
+			hl.BackgroundColor3 = gridColor
+			hl.BorderSizePixel  = 0
+			hl.Position         = UDim2.new(0, 0, pct, 0)
+			hl.Size             = UDim2.new(1, 0, 0, 1)
+			hl.Parent           = GridContainer
+		end
+	end
+	buildGrid()
+	local RadarSystem = {}
+	RadarSystem.Blips       = {}
+	RadarSystem.Connections = {}
+	local lastSize = Config.Size
+	function RadarSystem:IsIgnored(name)
+		for _, v in ipairs(Config.IgnoredNPCNames) do
+			if name == v then return true end
+		end
+		return false
+	end
+	function RadarSystem:GetRootPart(model)
+		if not model then return nil end
+		return model:FindFirstChild("HumanoidRootPart")
+			or model:FindFirstChild("Torso")
+			or model:FindFirstChild("UpperTorso")
+			or model.PrimaryPart
+			or model:FindFirstChildWhichIsA("BasePart")
+	end
+	function RadarSystem:GetPlayerFromModel(model)
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character == model then return p end
+		end
+		return nil
+	end
+	function RadarSystem:IsNPC(model)
+		if not model:IsA("Model") then return false end
+		if model == LP.Character then return false end
+		if not model:FindFirstChildOfClass("Humanoid") then return false end
+		if self:GetPlayerFromModel(model) then return false end
+		if self:IsIgnored(model.Name) then return false end
+		return true
+	end
+	function RadarSystem:CreateBlip(model, isNPC, playerObj)
+		local isLocal  = (playerObj == LP)
+		local dotSize  = isLocal and Config.LocalPlayerDotSize
+			or (isNPC and Config.NPCDotSize or Config.PlayerDotSize)
+		local dotColor = isLocal and Config.LocalPlayerColor
+			or (isNPC and Config.NPCsColor or Config.PlayersColor)
+		local blip = Instance.new("Frame")
+		blip.BackgroundTransparency = 1
+		blip.BorderSizePixel        = 0
+		blip.Size                   = UDim2.new(0, 1, 0, 1)
+		blip.ZIndex                 = 5
+		blip.Parent                 = List
+		local dot = Instance.new("Frame")
+		dot.Size             = UDim2.new(0, dotSize, 0, dotSize)
+		dot.Position         = UDim2.new(0.5, -dotSize/2, 0.5, -dotSize/2)
+		dot.BackgroundColor3 = dotColor
+		dot.BorderSizePixel  = 0
+		dot.ZIndex           = 6
+		dot.Parent           = blip
+		local dotCorner = Instance.new("UICorner")
+		dotCorner.CornerRadius = isLocal and UDim.new(0, 1) or UDim.new(1, 0)
+		dotCorner.Parent       = dot
+		if isLocal then dot.Rotation = 45 end
+		local heightLabel = Instance.new("TextLabel")
+		heightLabel.Size                   = UDim2.new(0, 10, 0, 10)
+		heightLabel.Position               = UDim2.new(0.5, -5, 0, -dotSize - 2)
+		heightLabel.BackgroundTransparency = 1
+		heightLabel.Text                   = ""
+		heightLabel.TextColor3             = dotColor
+		heightLabel.TextSize               = 8
+		heightLabel.Font                   = Enum.Font.GothamBold
+		heightLabel.ZIndex                 = 7
+		heightLabel.Parent                 = blip
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size                   = UDim2.new(0, 80, 0, 12)
+		nameLabel.Position               = UDim2.new(0.5, -40, 0, dotSize/2 + 2)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text                   = isNPC and model.Name
+			or (playerObj and playerObj.DisplayName or model.Name)
+		nameLabel.TextColor3             = Library.Theme.TextColor
+		nameLabel.TextSize               = Config.NameTextSize
+		nameLabel.Font                   = Config.NameFont
+		nameLabel.TextXAlignment         = Enum.TextXAlignment.Center
+		nameLabel.ZIndex                 = 7
+		nameLabel.Parent                 = blip
+		local stroke = Instance.new("UIStroke")
+		stroke.Color     = Color3.fromRGB(0, 0, 0)
+		stroke.Thickness = 1.5
+		stroke.Parent    = nameLabel
+		nameLabel.Visible =
+			(isNPC and Config.NPCSName or (not isNPC and Config.PlayersName)) and not isLocal
+		return {
+			Frame       = blip,
+			Dot         = dot,
+			NameLabel   = nameLabel,
+			HeightLabel = heightLabel,
+			Target      = model,
+			IsNPC       = isNPC,
+			Player      = playerObj,
+			IsLocal     = isLocal,
+		}
+	end
+	function RadarSystem:SquareClamp(x, y, hw, hh)
+		local cx = math.clamp(x, -hw, hw)
+		local cy = math.clamp(y, -hh, hh)
+		return cx, cy, (x ~= cx or y ~= cy)
+	end
+	function RadarSystem:UpdateBlip(blipData, localPos, cameraCF, halfW, halfH)
+		local model    = blipData.Target
+		local rootPart = self:GetRootPart(model)
+		if not rootPart or not blipData.Frame then
+			if blipData.Frame then blipData.Frame.Visible = false end
+			return
+		end
+		if blipData.IsLocal then
+			blipData.Frame.Position = UDim2.new(0, halfW, 0, halfH)
+			blipData.Frame.Visible  = true
+			if blipData.HeightLabel then blipData.HeightLabel.Text = "" end
+			return
+		end
+		local targetPos = rootPart.Position
+		local distance  = (targetPos - localPos).Magnitude
+		if distance > Config.MAX_DISTANCE then
+			blipData.Frame.Visible = false
+			return
+		end
+		local relativePos = targetPos - localPos
+		if Config.ROTATION_ENABLED then
+			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+			relativePos = CFrame.Angles(0, -yaw, 0) * relativePos
+		end
+		local scale  = math.min(halfW, halfH) / Config.ZOOM
+		local radarX = relativePos.X * scale
+		local radarY = relativePos.Z * scale
+		local clampedX, clampedY, wasClamped =
+			self:SquareClamp(radarX, radarY, halfW - 8, halfH - 8)
+		blipData.Frame.Position = UDim2.new(0, halfW + clampedX, 0, halfH + clampedY)
+		if Config.HeightIndicator and blipData.HeightLabel then
+			local diff = targetPos.Y - localPos.Y
+			blipData.HeightLabel.Text =
+				math.abs(diff) > Config.HeightThreshold and (diff > 0 and "▲" or "▼") or ""
+		end
+		local opacity = 1
+		if Config.FadeWithDistance then
+			opacity = math.max(1 - (distance / Config.MAX_DISTANCE), Config.MinOpacity)
+		end
+		blipData.Dot.BackgroundTransparency = 1 - opacity
+		if blipData.NameLabel then
+			blipData.NameLabel.TextTransparency = 1 - opacity
+			local st = blipData.NameLabel:FindFirstChildOfClass("UIStroke")
+			if st then st.Transparency = 1 - opacity end
+		end
+		if blipData.HeightLabel then
+			blipData.HeightLabel.TextTransparency = 1 - opacity
+		end
+		blipData.Frame.Visible = blipData.IsNPC and Config.NPCS or Config.Players
+		if blipData.NameLabel then
+			blipData.NameLabel.Visible = blipData.IsNPC and Config.NPCSName or Config.PlayersName
+		end
+		if wasClamped then
+			local ss = (blipData.IsNPC and Config.NPCDotSize or Config.PlayerDotSize) * 0.6
+			blipData.Dot.Size = UDim2.new(0, ss, 0, ss)
+		else
+			local bs = blipData.IsNPC and Config.NPCDotSize or Config.PlayerDotSize
+			blipData.Dot.Size = UDim2.new(0, bs, 0, bs)
+		end
+	end
+
+	function RadarSystem:Update()
+		if not LP.Character then return end
+		local localRoot = self:GetRootPart(LP.Character)
+		if not localRoot then return end
+		local localPos = localRoot.Position
+		local cameraCF = WS.CurrentCamera.CFrame
+		local halfW    = Holder.AbsoluteSize.X / 2
+		local halfH    = Holder.AbsoluteSize.Y / 2
+		if Config.Size ~= lastSize then
+			lastSize = Config.Size
+			Main.Size = UDim2.new(0, Config.Size + 10, 0, Config.Size + 40)
+		end
+		if Config.GridSize ~= lastGridSize or Config.GridEnabled ~= lastGridEnabled then
+			buildGrid()
+		end
+		if Config.GridEnabled and not Config.GridStatic and Config.ROTATION_ENABLED then
+			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+			GridContainer.Rotation = math.deg(yaw)
+		else
+			GridContainer.Rotation = 0
+		end
+		local targets    = {}
+		local activeKeys = {}
+		table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP })
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LP and player.Character then
+				table.insert(targets, { Model = player.Character, IsNPC = false, Player = player })
+			end
+		end
+		for _, obj in ipairs(WS:GetDescendants()) do
+			if obj:IsA("Model") and obj ~= LP.Character then
+				if self:IsNPC(obj) then
+					local isPlayerChar = false
+					for _, p in ipairs(Players:GetPlayers()) do
+						if p.Character == obj then isPlayerChar = true; break end
+					end
+					if not isPlayerChar then
+						table.insert(targets, { Model = obj, IsNPC = true, Player = nil })
+					end
+				end
+			end
+		end
+		for _, target in ipairs(targets) do
+			local key = tostring(target.Model)
+			activeKeys[key] = true
+
+			if not self.Blips[key] or not self.Blips[key].Frame then
+				self.Blips[key] = self:CreateBlip(target.Model, target.IsNPC, target.Player)
+			end
+
+			self:UpdateBlip(self.Blips[key], localPos, cameraCF, halfW, halfH)
+		end
+
+		local toRemove = {}
+		for key, data in pairs(self.Blips) do
+			if not activeKeys[key] or not data.Target or not data.Target.Parent then
+				table.insert(toRemove, key)
+			end
+		end
+		for _, key in ipairs(toRemove) do
+			local data = self.Blips[key]
+			if data and data.Frame then data.Frame:Destroy() end
+			self.Blips[key] = nil
+		end
+	end
+	local RadarAPI = {}
+	local CLAMPS = {
+		ZOOM               = function(v) return math.clamp(v, 20, 1000)          end,
+		MAX_DISTANCE       = function(v) return math.clamp(v, 1, 10000)          end,
+		Size               = function(v) return math.clamp(v, 80, 600)           end,
+		GridSize           = function(v) return math.clamp(math.floor(v), 2, 30) end,
+		MinOpacity         = function(v) return math.clamp(v, 0, 1)              end,
+		PlayerDotSize      = function(v) return math.clamp(v, 2, 20)             end,
+		NPCDotSize         = function(v) return math.clamp(v, 2, 20)             end,
+		LocalPlayerDotSize = function(v) return math.clamp(v, 2, 20)             end,
+		NameTextSize       = function(v) return math.clamp(v, 6, 24)             end,
+		HeightThreshold    = function(v) return math.max(v, 0)                   end,
+	}
+
+	function RadarAPI:Set(t)
+		assert(type(t) == "table", "[Radar:Set] expects a table")
+		for key, value in pairs(t) do
+			if key == "IgnoredNPCNames" and type(value) == "table" then
+				if value.add then
+					table.insert(Config.IgnoredNPCNames, tostring(value.add))
+				elseif value.remove then
+					for i, v in ipairs(Config.IgnoredNPCNames) do
+						if v == tostring(value.remove) then
+							table.remove(Config.IgnoredNPCNames, i)
+							break
+						end
+					end
+				end
+			elseif Config[key] ~= nil then
+				Config[key] = CLAMPS[key] and CLAMPS[key](value) or value
+			end
+		end
+	end
+
+	function RadarAPI:Get(key)
+		if key ~= nil then
+			return Config[key]
+		end
+		local copy = {}
+		for k, v in pairs(Config) do
+			copy[k] = type(v) == "table" and table.clone(v) or v
+		end
+		return copy
+	end
+
+	function RadarAPI:Destroy()
+		for _, conn in ipairs(RadarSystem.Connections) do conn:Disconnect() end
+		RadarSystem.Connections = {}
+		SelfModules.UI.UnMakeDraggable(TitleBar)
+		Main:Destroy()
+	end
+
+	table.insert(RadarSystem.Connections, RunService.RenderStepped:Connect(function()
+		RadarSystem:Update()
+	end))
+
+	table.insert(RadarSystem.Connections, LP.CharacterAdded:Connect(function()
+		for _, data in pairs(RadarSystem.Blips) do
+			if data.Frame then data.Frame:Destroy() end
+		end
+		RadarSystem.Blips = {}
+	end))
+
+	table.insert(RadarSystem.Connections, Players.PlayerRemoving:Connect(function(player)
+		if player.Character then
+			local key  = tostring(player.Character)
+			local data = RadarSystem.Blips[key]
+			if data and data.Frame then data.Frame:Destroy() end
+			RadarSystem.Blips[key] = nil
+		end
+	end))
+
+	return RadarAPI
+end
+
 ScreenGui.Parent = VG
 return Library
