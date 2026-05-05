@@ -7937,55 +7937,56 @@ function Library:AddRadar()
 	-- ── Private config (never exposed externally) ───────────────────────────
 	local Config = {
 		-- Visibility
-		Players     = true,
-		NPCS        = true,
-		PlayersName = true,
-		NPCSName    = true,
+		players     = true,
+		npcs        = true,
+		players_name = true,
+		npcs_name    = true,
 
 		-- Colors
-		PlayersColor     = Color3.fromRGB(80,  200, 255),
-		NPCsColor        = Color3.fromRGB(100, 255,  80),
-		LocalPlayerColor = Color3.fromRGB(255, 255, 255),
+		players_color     = Color3.fromRGB(80,  200, 255),
+		npcs_color        = Color3.fromRGB(100, 255,  80),
+		local_player_color = Color3.fromRGB(255, 255, 255),
 
 		-- Mechanics
-		ZOOM             = 80,
-		MAX_DISTANCE     = 500,
-		ROTATION_ENABLED = true,   -- true = camera-relative | false = north-up fixed
+		zoom             = 80,
+		max_distance     = 500,
+		rotation_enabled = true,   -- true = camera-relative | false = north-up fixed
 
 		-- Canvas
-		Size = 200,   -- radar square size in pixels (80–600)
+		size = 200,   -- radar square size in pixels (80–600)
 
 		-- Grid
-		GridEnabled = true,
-		GridSize    = 10,    -- cells across (2–30)
-		GridStatic  = false, -- false = grid rotates with camera | true = always axis-aligned
+		grid_enabled = true,
+		grid_size    = 10,    -- cells across (2–30)
+		grid_static  = false, -- false = grid rotates with camera | true = always axis-aligned
+		moving_grid  = false, -- true = grid shifts with player movement | false = grid centered
 
 		-- Dots
-		PlayerDotSize      = 5,
-		NPCDotSize         = 4,
-		LocalPlayerDotSize = 6,
+		player_dot_size      = 5,
+		npc_dot_size         = 4,
+		local_player_dot_size = 6,
 
 		-- Names
-		NameTextSize = 9,
-		NameFont     = Enum.Font.Gotham,
+		name_text_size = 9,
+		name_font     = Enum.Font.Gotham,
 
 		-- Height indicator
-		HeightIndicator = true,
-		HeightThreshold = 30,
+		height_indicator = true,
+		height_threshold = 30,
 
 		-- Distance fade
-		FadeWithDistance = true,
-		MinOpacity       = 0.3,
+		fade_with_distance = true,
+		min_opacity       = 0.3,
 
 		-- NPC ignore (exact name match only)
-		IgnoredNPCNames = { "Model", "Rig" },
+		ignored_npc_names = { "Model", "Rig" },
 	}
 	local Main = SelfModules.UI.Create("Frame", {
 		Name             = "Radar",
 		BackgroundColor3 = Library.Theme.TopbarColor,
 		BorderSizePixel  = 0,
-		Position         = UDim2.new(0, 20, 1, -(Config.Size + 54)),
-		Size             = UDim2.new(0, Config.Size + 10, 0, Config.Size + 40),
+		Position         = UDim2.new(0, 20, 1, -(Config.size + 54)),
+		Size             = UDim2.new(0, Config.size + 10, 0, Config.size + 40),
 	}, UDim.new(0, 6))
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.Accent,
@@ -8051,10 +8052,10 @@ function Library:AddRadar()
 	local lastGridEnabled = nil
 	local function buildGrid()
 		for _, c in ipairs(GridContainer:GetChildren()) do c:Destroy() end
-		lastGridSize    = Config.GridSize
-		lastGridEnabled = Config.GridEnabled
-		if not Config.GridEnabled then return end
-		local n         = math.clamp(math.floor(Config.GridSize), 2, 30)
+		lastGridSize    = Config.grid_size
+		lastGridEnabled = Config.grid_enabled
+		if not Config.grid_enabled then return end
+		local n         = math.clamp(math.floor(Config.grid_size), 2, 30)
 		local gridColor = SelfModules.UI.Color.Add(
 			Library.Theme.BackgroundColor,
 			Color3.fromRGB(16, 16, 16)
@@ -8079,9 +8080,9 @@ function Library:AddRadar()
 	local RadarSystem = {}
 	RadarSystem.Blips       = {}
 	RadarSystem.Connections = {}
-	local lastSize = Config.Size
+	local lastSize = Config.size
 	function RadarSystem:IsIgnored(name)
-		for _, v in ipairs(Config.IgnoredNPCNames) do
+		for _, v in ipairs(Config.ignored_npc_names) do
 			if name == v then return true end
 		end
 		return false
@@ -8110,10 +8111,10 @@ function Library:AddRadar()
 	end
 	function RadarSystem:CreateBlip(model, isNPC, playerObj)
 		local isLocal  = (playerObj == LP)
-		local dotSize  = isLocal and Config.LocalPlayerDotSize
-			or (isNPC and Config.NPCDotSize or Config.PlayerDotSize)
-		local dotColor = isLocal and Config.LocalPlayerColor
-			or (isNPC and Config.NPCsColor or Config.PlayersColor)
+		local dotSize  = isLocal and Config.local_player_dot_size
+			or (isNPC and Config.npc_dot_size or Config.player_dot_size)
+		local dotColor = isLocal and Config.local_player_color
+			or (isNPC and Config.npcs_color or Config.players_color)
 		local blip = Instance.new("Frame")
 		blip.BackgroundTransparency = 1
 		blip.BorderSizePixel        = 0
@@ -8148,8 +8149,8 @@ function Library:AddRadar()
 		nameLabel.Text                   = isNPC and model.Name
 			or (playerObj and playerObj.DisplayName or model.Name)
 		nameLabel.TextColor3             = Library.Theme.TextColor
-		nameLabel.TextSize               = Config.NameTextSize
-		nameLabel.Font                   = Config.NameFont
+		nameLabel.TextSize               = Config.name_text_size
+		nameLabel.Font                   = Config.name_font
 		nameLabel.TextXAlignment         = Enum.TextXAlignment.Center
 		nameLabel.ZIndex                 = 7
 		nameLabel.Parent                 = blip
@@ -8158,7 +8159,7 @@ function Library:AddRadar()
 		stroke.Thickness = 1.5
 		stroke.Parent    = nameLabel
 		nameLabel.Visible =
-			(isNPC and Config.NPCSName or (not isNPC and Config.PlayersName)) and not isLocal
+			(isNPC and Config.npcs_name or (not isNPC and Config.players_name)) and not isLocal
 		return {
 			Frame       = blip,
 			Dot         = dot,
@@ -8190,29 +8191,29 @@ function Library:AddRadar()
 		end
 		local targetPos = rootPart.Position
 		local distance  = (targetPos - localPos).Magnitude
-		if distance > Config.MAX_DISTANCE then
+		if distance > Config.max_distance then
 			blipData.Frame.Visible = false
 			return
 		end
 		local relativePos = targetPos - localPos
-		if Config.ROTATION_ENABLED then
+		if Config.rotation_enabled then
 			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
 			relativePos = CFrame.Angles(0, -yaw, 0) * relativePos
 		end
-		local scale  = math.min(halfW, halfH) / Config.ZOOM
+		local scale  = math.min(halfW, halfH) / Config.zoom
 		local radarX = relativePos.X * scale
 		local radarY = relativePos.Z * scale
 		local clampedX, clampedY, wasClamped =
 			self:SquareClamp(radarX, radarY, halfW - 8, halfH - 8)
 		blipData.Frame.Position = UDim2.new(0, halfW + clampedX, 0, halfH + clampedY)
-		if Config.HeightIndicator and blipData.HeightLabel then
+		if Config.height_indicator and blipData.HeightLabel then
 			local diff = targetPos.Y - localPos.Y
 			blipData.HeightLabel.Text =
-				math.abs(diff) > Config.HeightThreshold and (diff > 0 and "▲" or "▼") or ""
+				math.abs(diff) > Config.height_threshold and (diff > 0 and "▲" or "▼") or ""
 		end
 		local opacity = 1
-		if Config.FadeWithDistance then
-			opacity = math.max(1 - (distance / Config.MAX_DISTANCE), Config.MinOpacity)
+		if Config.fade_with_distance then
+			opacity = math.max(1 - (distance / Config.max_distance), Config.min_opacity)
 		end
 		blipData.Dot.BackgroundTransparency = 1 - opacity
 		if blipData.NameLabel then
@@ -8223,15 +8224,15 @@ function Library:AddRadar()
 		if blipData.HeightLabel then
 			blipData.HeightLabel.TextTransparency = 1 - opacity
 		end
-		blipData.Frame.Visible = blipData.IsNPC and Config.NPCS or Config.Players
+		blipData.Frame.Visible = blipData.IsNPC and Config.npcs or Config.players
 		if blipData.NameLabel then
-			blipData.NameLabel.Visible = blipData.IsNPC and Config.NPCSName or Config.PlayersName
+			blipData.NameLabel.Visible = blipData.IsNPC and Config.npcs_name or Config.players_name
 		end
 		if wasClamped then
-			local ss = (blipData.IsNPC and Config.NPCDotSize or Config.PlayerDotSize) * 0.6
+			local ss = (blipData.IsNPC and Config.npc_dot_size or Config.player_dot_size) * 0.6
 			blipData.Dot.Size = UDim2.new(0, ss, 0, ss)
 		else
-			local bs = blipData.IsNPC and Config.NPCDotSize or Config.PlayerDotSize
+			local bs = blipData.IsNPC and Config.npc_dot_size or Config.player_dot_size
 			blipData.Dot.Size = UDim2.new(0, bs, 0, bs)
 		end
 	end
@@ -8244,19 +8245,32 @@ function Library:AddRadar()
 		local cameraCF = WS.CurrentCamera.CFrame
 		local halfW    = Holder.AbsoluteSize.X / 2
 		local halfH    = Holder.AbsoluteSize.Y / 2
-		if Config.Size ~= lastSize then
-			lastSize = Config.Size
-			Main.Size = UDim2.new(0, Config.Size + 10, 0, Config.Size + 40)
+		if Config.size ~= lastSize then
+			lastSize = Config.size
+			Main.Size = UDim2.new(0, Config.size + 10, 0, Config.size + 40)
 		end
-		if Config.GridSize ~= lastGridSize or Config.GridEnabled ~= lastGridEnabled then
+		if Config.grid_size ~= lastGridSize or Config.grid_enabled ~= lastGridEnabled then
 			buildGrid()
 		end
-		if Config.GridEnabled and not Config.GridStatic and Config.ROTATION_ENABLED then
+
+		-- Grid rotation handling
+		if Config.grid_enabled and not Config.grid_static and Config.rotation_enabled then
 			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
 			GridContainer.Rotation = math.deg(yaw)
 		else
 			GridContainer.Rotation = 0
 		end
+
+		-- Moving grid offset based on player position
+		if Config.moving_grid then
+			local scale = math.min(halfW, halfH) / Config.zoom
+			local gridOffsetX = (localPos.X % (Config.zoom * 2)) * scale
+			local gridOffsetY = (localPos.Z % (Config.zoom * 2)) * scale
+			GridContainer.Position = UDim2.new(0.5, gridOffsetX - halfW, 0.5, gridOffsetY - halfH)
+		else
+			GridContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
+		end
+
 		local targets    = {}
 		local activeKeys = {}
 		table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP })
@@ -8303,31 +8317,30 @@ function Library:AddRadar()
 	end
 	local RadarAPI = {}
 	local CLAMPS = {
-		ZOOM               = function(v) return math.clamp(v, 20, 1000)          end,
-		MAX_DISTANCE       = function(v) return math.clamp(v, 1, 10000)          end,
-		Size               = function(v) return math.clamp(v, 80, 600)           end,
-		GridSize           = function(v) return math.clamp(math.floor(v), 2, 30) end,
-		MinOpacity         = function(v) return math.clamp(v, 0, 1)              end,
-		PlayerDotSize      = function(v) return math.clamp(v, 2, 20)             end,
-		NPCDotSize         = function(v) return math.clamp(v, 2, 20)             end,
-		LocalPlayerDotSize = function(v) return math.clamp(v, 2, 20)             end,
-		NameTextSize       = function(v) return math.clamp(v, 6, 24)             end,
-		HeightThreshold    = function(v) return math.max(v, 0)                   end,
+		zoom               = function(v) return math.clamp(v, 20, 1000)          end,
+		max_distance       = function(v) return math.clamp(v, 1, 10000)          end,
+		size               = function(v) return math.clamp(v, 80, 600)           end,
+		grid_size           = function(v) return math.clamp(math.floor(v), 2, 30) end,
+		min_opacity         = function(v) return math.clamp(v, 0, 1)              end,
+		player_dot_size      = function(v) return math.clamp(v, 2, 20)             end,
+		npc_dot_size         = function(v) return math.clamp(v, 2, 20)             end,
+		local_player_dot_size = function(v) return math.clamp(v, 2, 20)             end,
+		name_text_size       = function(v) return math.clamp(v, 6, 24)             end,
+		height_threshold    = function(v) return math.max(v, 0)                   end,
 	}
+
+	function RadarAPI:GetRadar()
+		return Main
+	end
 
 	function RadarAPI:Set(t)
 		assert(type(t) == "table", "[Radar:Set] expects a table")
 		for key, value in pairs(t) do
-			if key == "IgnoredNPCNames" and type(value) == "table" then
-				if value.add then
-					table.insert(Config.IgnoredNPCNames, tostring(value.add))
-				elseif value.remove then
-					for i, v in ipairs(Config.IgnoredNPCNames) do
-						if v == tostring(value.remove) then
-							table.remove(Config.IgnoredNPCNames, i)
-							break
-						end
-					end
+			if key == "ignored_npc_names" and type(value) == "table" then
+				-- Replace entire list with provided names
+				Config.ignored_npc_names = {}
+				for _, name in ipairs(value) do
+					table.insert(Config.ignored_npc_names, tostring(name))
 				end
 			elseif Config[key] ~= nil then
 				Config[key] = CLAMPS[key] and CLAMPS[key](value) or value
