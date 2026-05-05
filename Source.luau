@@ -7933,67 +7933,208 @@ function Library:AddRadar()
 	local RunService = game:GetService("RunService")
 	local WS         = game:GetService("Workspace")
 	local LP         = Players.LocalPlayer
+	local UIS        = game:GetService("UserInputService")
 
-	-- ── Private config (never exposed externally) ───────────────────────────
+	-- ── Structured Config (public API surface) ─────────────────────────────
 	local Config = {
-		-- Visibility
-		players     = true,
-		npcs        = true,
-		players_name = true,
-		npcs_name    = true,
-
-		-- Colors
-		players_color     = Color3.fromRGB(80,  200, 255),
-		npcs_color        = Color3.fromRGB(100, 255,  80),
-		local_player_color = Color3.fromRGB(255, 255, 255),
-
-		-- Mechanics
-		zoom             = 80,
-		max_distance     = 500,
-		rotation_enabled = true,   -- true = camera-relative | false = north-up fixed
-
-		-- Canvas
-		size = 200,   -- radar square size in pixels (80–600)
-
-		-- Grid
-		grid_enabled = true,
-		grid_size    = 10,    -- cells across (2–30)
-		grid_static  = false, -- false = grid rotates with camera | true = always axis-aligned
-		moving_grid  = false, -- true = grid shifts with player movement | false = grid centered
-
-		-- Dots
-		player_dot_size      = 5,
-		npc_dot_size         = 4,
-		local_player_dot_size = 6,
-
-		-- Names
-		name_text_size = 9,
-		name_font     = Enum.Font.Gotham,
-
-		-- Height indicator
-		height_indicator = true,
-		height_threshold = 30,
-
-		-- Distance fade
-		fade_with_distance = true,
-		min_opacity       = 0.3,
-
-		-- NPC ignore (exact name match only)
-		ignored_npc_names = { "Model", "Rig" },
+		Track = {
+			Players = true,
+			NPCs    = true,
+			Self    = true,
+		},
+		Display = {
+			Name = {
+				Players = true,
+				NPCs    = true,
+				Self    = true,
+			},
+			Health = {
+				Players = true,
+				NPCs    = true,
+				Self    = true,
+			},
+			Distance = {
+				Players = true,
+				NPCs    = true,
+				Self    = true,
+			},
+		},
+		Color = {
+			Players = Color3.fromRGB(85, 255, 127),
+			NPCs    = Color3.fromRGB(255, 0, 0),
+			Self    = Color3.fromRGB(255, 255, 0),
+		},
+		Blacklist = {
+			Players = {},
+			NPCs    = {},
+		},
+		Settings = {
+			Enabled                      = true,
+			MapSize                      = 200,
+			Zoom                         = 100,
+			DotSize                      = 5,
+			ClipDotsInBorders            = false,
+			Grid                         = true,
+			GridSize                     = 20,
+			RotateGridWithCamera         = true,
+			RotateGridHandler            = "Camera",
+			TextSizes                    = { Players = 10, NPCs = 10, Self = 10 },
+			Font                         = Enum.Font.Gotham,
+			TeamCheck                    = false,
+			IgnoreBehindWalls            = false,
+			IgnoreIfHumanoidHealthZero   = false,
+			HeaterColors                 = false,
+			AngleRadius                  = 360,
+			Position                     = Vector2.new(200, 200),
+			IsDraggable                  = true,
+			IsInteractiveWithScrollWheel = false,
+			RenderWalls                  = true,
+		},
 	}
+
+	-- ── Internal flat state (derived from Config) ──────────────────────────
+	local Internal = {
+		enabled               = true,
+		size                  = 200,
+		zoom                  = 100,
+		dot_size              = 5,
+		clip_dots             = false,
+		players               = true,
+		npcs                  = true,
+		show_self             = true,
+		players_name          = true,
+		npcs_name             = true,
+		self_name             = true,
+		players_health        = true,
+		npcs_health           = true,
+		self_health           = true,
+		players_distance      = true,
+		npcs_distance         = true,
+		self_distance         = true,
+		players_color         = Color3.fromRGB(85, 255, 127),
+		npcs_color            = Color3.fromRGB(255, 0, 0),
+		self_color            = Color3.fromRGB(255, 255, 0),
+		blacklist_players     = {},
+		ignored_npc_names     = {},
+		grid_enabled          = true,
+		grid_size             = 20,
+		rotation_enabled      = true,
+		rotate_handler        = "Camera",
+		text_sizes_players    = 10,
+		text_sizes_npcs       = 10,
+		text_sizes_self       = 10,
+		name_font             = Enum.Font.Gotham,
+		team_check            = false,
+		ignore_behind_walls   = false,
+		ignore_dead           = false,
+		heater_colors         = false,
+		angle_radius          = 360,
+		position              = Vector2.new(200, 200),
+		draggable             = true,
+		scroll_zoom           = false,
+		render_walls          = true,
+		-- legacy internals kept for behaviour
+		max_distance          = 500,
+		fade_with_distance    = true,
+		min_opacity           = 0.3,
+		height_indicator      = true,
+		height_threshold      = 30,
+		moving_grid           = false,
+	}
+
+	-- ── Helpers ────────────────────────────────────────────────────────────
+	local function DeepCopy(t)
+		local c = {}
+		for k, v in pairs(t) do
+			c[k] = type(v) == "table" and DeepCopy(v) or v
+		end
+		return c
+	end
+
+	local function DeepMerge(target, source)
+		for k, v in pairs(source) do
+			if type(v) == "table" and type(target[k]) == "table" then
+				DeepMerge(target[k], v)
+			else
+				target[k] = v
+			end
+		end
+	end
+
+	local function SyncInternal()
+		local S = Config.Settings
+		local T = Config.Track
+		local D = Config.Display
+		local C = Config.Color
+		local B = Config.Blacklist
+
+		Internal.enabled               = S.Enabled
+		Internal.size                  = S.MapSize
+		Internal.zoom                  = S.Zoom
+		Internal.dot_size              = S.DotSize
+		Internal.clip_dots             = S.ClipDotsInBorders
+		Internal.grid_enabled          = S.Grid
+		Internal.grid_size             = S.GridSize
+		Internal.rotation_enabled      = S.RotateGridWithCamera
+		Internal.rotate_handler        = S.RotateGridHandler
+		Internal.text_sizes_players    = S.TextSizes.Players
+		Internal.text_sizes_npcs       = S.TextSizes.NPCs
+		Internal.text_sizes_self       = S.TextSizes.Self
+		Internal.name_font             = S.Font
+		Internal.team_check            = S.TeamCheck
+		Internal.ignore_behind_walls   = S.IgnoreBehindWalls
+		Internal.ignore_dead           = S.IgnoreIfHumanoidHealthZero
+		Internal.heater_colors         = S.HeaterColors
+		Internal.angle_radius          = S.AngleRadius
+		Internal.position              = S.Position
+		Internal.draggable             = S.IsDraggable
+		Internal.scroll_zoom           = S.IsInteractiveWithScrollWheel
+		Internal.render_walls          = S.RenderWalls
+
+		Internal.players               = T.Players
+		Internal.npcs                  = T.NPCs
+		Internal.show_self             = T.Self
+
+		Internal.players_name          = D.Name.Players
+		Internal.npcs_name             = D.Name.NPCs
+		Internal.self_name             = D.Name.Self
+		Internal.players_health        = D.Health.Players
+		Internal.npcs_health           = D.Health.NPCs
+		Internal.self_health           = D.Health.Self
+		Internal.players_distance      = D.Distance.Players
+		Internal.npcs_distance         = D.Distance.NPCs
+		Internal.self_distance         = D.Distance.Self
+
+		Internal.players_color         = C.Players
+		Internal.npcs_color            = C.NPCs
+		Internal.self_color            = C.Self
+
+		Internal.blacklist_players     = B.Players
+		Internal.ignored_npc_names     = B.NPCs
+	end
+
+	local function HeaterColor(dist, maxDist)
+		local r = math.clamp(dist / maxDist, 0, 1)
+		return Color3.fromHSV((1 - r) * 0.33, 1, 1) -- green -> red
+	end
+
+	-- ── UI Construction ────────────────────────────────────────────────────
 	local Main = SelfModules.UI.Create("Frame", {
 		Name             = "Radar",
 		BackgroundColor3 = Library.Theme.TopbarColor,
 		BorderSizePixel  = 0,
-		Position         = UDim2.new(0, 20, 1, -(Config.size + 54)),
-		Size             = UDim2.new(0, Config.size + 10, 0, Config.size + 40),
+		Position         = UDim2.new(0, Internal.position.X, 0, Internal.position.Y),
+		Size             = UDim2.new(0, Internal.size + 10, 0, Internal.size + 40),
+		Visible          = Internal.enabled,
 	}, UDim.new(0, 6))
+
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.Accent,
 		BorderSizePixel  = 0,
 		Size             = UDim2.new(1, 0, 0, 2),
 		ZIndex           = 12,
 	}, UDim.new(0, 2)).Parent = Main
+
 	local TitleBar = SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.TopbarColor,
 		BorderSizePixel  = 0,
@@ -8002,6 +8143,7 @@ function Library:AddRadar()
 		ZIndex           = 10,
 	})
 	TitleBar.Parent = Main
+
 	SelfModules.UI.Create("TextLabel", {
 		BackgroundTransparency = 1,
 		Size                   = UDim2.new(1, -12, 1, 0),
@@ -8013,12 +8155,14 @@ function Library:AddRadar()
 		TextXAlignment         = Enum.TextXAlignment.Left,
 		ZIndex                 = 11,
 	}).Parent = TitleBar
+
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.BackgroundColor,
 		BorderSizePixel  = 0,
 		Position         = UDim2.new(0, 0, 0, 24),
 		Size             = UDim2.new(1, 0, 0, 1),
 	}).Parent = Main
+
 	local Holder = SelfModules.UI.Create("Frame", {
 		Name             = "Holder",
 		BackgroundColor3 = Library.Theme.BackgroundColor,
@@ -8028,6 +8172,7 @@ function Library:AddRadar()
 		Size             = UDim2.new(1, -10, 1, -35),
 	}, UDim.new(0, 5))
 	Holder.Parent = Main
+
 	local List = SelfModules.UI.Create("CanvasGroup", {
 		Name                   = "List",
 		BackgroundTransparency = 1,
@@ -8037,6 +8182,7 @@ function Library:AddRadar()
 		ZIndex                 = 3,
 	}, UDim.new(0, 5))
 	List.Parent = Holder
+
 	local GridContainer = SelfModules.UI.Create("Frame", {
 		Name                   = "GridContainer",
 		BackgroundTransparency = 1,
@@ -8046,16 +8192,39 @@ function Library:AddRadar()
 		ZIndex                 = 1,
 	})
 	GridContainer.Parent = List
-	SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
+
+	local WallContainer = SelfModules.UI.Create("Frame", {
+		Name                   = "WallContainer",
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 1, 0),
+		ZIndex                 = 2,
+	})
+	WallContainer.Parent = List
+
 	Main.Parent = ScreenGui
+
+	-- ── Draggable state ────────────────────────────────────────────────────
+	local isDraggableSet = false
+	local function UpdateDraggable()
+		if Internal.draggable and not isDraggableSet then
+			SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
+			isDraggableSet = true
+		elseif not Internal.draggable and isDraggableSet then
+			SelfModules.UI.UnMakeDraggable(TitleBar)
+			isDraggableSet = false
+		end
+	end
+	UpdateDraggable()
+
+	-- ── Grid ───────────────────────────────────────────────────────────────
 	local lastGridSize    = -1
 	local lastGridEnabled = nil
 	local function buildGrid()
 		for _, c in ipairs(GridContainer:GetChildren()) do c:Destroy() end
-		lastGridSize    = Config.grid_size
-		lastGridEnabled = Config.grid_enabled
-		if not Config.grid_enabled then return end
-		local n         = math.clamp(math.floor(Config.grid_size), 2, 30)
+		lastGridSize    = Internal.grid_size
+		lastGridEnabled = Internal.grid_enabled
+		if not Internal.grid_enabled then return end
+		local n         = math.clamp(math.floor(Internal.grid_size), 2, 30)
 		local gridColor = SelfModules.UI.Color.Add(
 			Library.Theme.BackgroundColor,
 			Color3.fromRGB(16, 16, 16)
@@ -8077,16 +8246,31 @@ function Library:AddRadar()
 		end
 	end
 	buildGrid()
+
+	-- ── Radar Core ─────────────────────────────────────────────────────────
 	local RadarSystem = {}
 	RadarSystem.Blips       = {}
+	RadarSystem.WallBlips   = {}
 	RadarSystem.Connections = {}
-	local lastSize = Config.size
+
+	local lastSize = Internal.size
+
 	function RadarSystem:IsIgnored(name)
-		for _, v in ipairs(Config.ignored_npc_names) do
+		for _, v in ipairs(Internal.ignored_npc_names) do
 			if name == v then return true end
 		end
 		return false
 	end
+
+	function RadarSystem:IsPlayerBlacklisted(playerObj)
+		for _, entry in ipairs(Internal.blacklist_players) do
+			if entry == playerObj.Name or entry == playerObj.DisplayName or entry == playerObj.UserId then
+				return true
+			end
+		end
+		return false
+	end
+
 	function RadarSystem:GetRootPart(model)
 		if not model then return nil end
 		return model:FindFirstChild("HumanoidRootPart")
@@ -8095,12 +8279,14 @@ function Library:AddRadar()
 			or model.PrimaryPart
 			or model:FindFirstChildWhichIsA("BasePart")
 	end
+
 	function RadarSystem:GetPlayerFromModel(model)
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p.Character == model then return p end
 		end
 		return nil
 	end
+
 	function RadarSystem:IsNPC(model)
 		if not model:IsA("Model") then return false end
 		if model == LP.Character then return false end
@@ -8109,18 +8295,22 @@ function Library:AddRadar()
 		if self:IsIgnored(model.Name) then return false end
 		return true
 	end
+
 	function RadarSystem:CreateBlip(model, isNPC, playerObj)
 		local isLocal  = (playerObj == LP)
-		local dotSize  = isLocal and Config.local_player_dot_size
-			or (isNPC and Config.npc_dot_size or Config.player_dot_size)
-		local dotColor = isLocal and Config.local_player_color
-			or (isNPC and Config.npcs_color or Config.players_color)
+		local dotSize  = Internal.dot_size
+		local dotColor = isLocal and Internal.self_color
+			or (isNPC and Internal.npcs_color or Internal.players_color)
+		local txtSize  = isLocal and Internal.text_sizes_self
+			or (isNPC and Internal.text_sizes_npcs or Internal.text_sizes_players)
+
 		local blip = Instance.new("Frame")
 		blip.BackgroundTransparency = 1
 		blip.BorderSizePixel        = 0
 		blip.Size                   = UDim2.new(0, 1, 0, 1)
 		blip.ZIndex                 = 5
 		blip.Parent                 = List
+
 		local dot = Instance.new("Frame")
 		dot.Size             = UDim2.new(0, dotSize, 0, dotSize)
 		dot.Position         = UDim2.new(0.5, -dotSize/2, 0.5, -dotSize/2)
@@ -8128,10 +8318,12 @@ function Library:AddRadar()
 		dot.BorderSizePixel  = 0
 		dot.ZIndex           = 6
 		dot.Parent           = blip
+
 		local dotCorner = Instance.new("UICorner")
 		dotCorner.CornerRadius = isLocal and UDim.new(0, 1) or UDim.new(1, 0)
 		dotCorner.Parent       = dot
 		if isLocal then dot.Rotation = 45 end
+
 		local heightLabel = Instance.new("TextLabel")
 		heightLabel.Size                   = UDim2.new(0, 10, 0, 10)
 		heightLabel.Position               = UDim2.new(0.5, -5, 0, -dotSize - 2)
@@ -8142,6 +8334,7 @@ function Library:AddRadar()
 		heightLabel.Font                   = Enum.Font.GothamBold
 		heightLabel.ZIndex                 = 7
 		heightLabel.Parent                 = blip
+
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Size                   = UDim2.new(0, 80, 0, 12)
 		nameLabel.Position               = UDim2.new(0.5, -40, 0, dotSize/2 + 2)
@@ -8149,33 +8342,69 @@ function Library:AddRadar()
 		nameLabel.Text                   = isNPC and model.Name
 			or (playerObj and playerObj.DisplayName or model.Name)
 		nameLabel.TextColor3             = Library.Theme.TextColor
-		nameLabel.TextSize               = Config.name_text_size
-		nameLabel.Font                   = Config.name_font
+		nameLabel.TextSize               = txtSize
+		nameLabel.Font                   = Internal.name_font
 		nameLabel.TextXAlignment         = Enum.TextXAlignment.Center
 		nameLabel.ZIndex                 = 7
 		nameLabel.Parent                 = blip
+
 		local stroke = Instance.new("UIStroke")
 		stroke.Color     = Color3.fromRGB(0, 0, 0)
 		stroke.Thickness = 1.5
 		stroke.Parent    = nameLabel
-		nameLabel.Visible =
-			(isNPC and Config.npcs_name or (not isNPC and Config.players_name)) and not isLocal
+
+		local healthLabel = Instance.new("TextLabel")
+		healthLabel.Size                   = UDim2.new(0, 80, 0, 10)
+		healthLabel.Position               = UDim2.new(0.5, -40, 0, dotSize/2 + 14)
+		healthLabel.BackgroundTransparency = 1
+		healthLabel.Text                   = ""
+		healthLabel.TextColor3             = Library.Theme.TextColor
+		healthLabel.TextSize               = math.max(txtSize - 1, 6)
+		healthLabel.Font                   = Internal.name_font
+		healthLabel.TextXAlignment         = Enum.TextXAlignment.Center
+		healthLabel.ZIndex                 = 7
+		healthLabel.Parent                 = blip
+		local hStroke = Instance.new("UIStroke")
+		hStroke.Color     = Color3.fromRGB(0,0,0)
+		hStroke.Thickness = 1
+		hStroke.Parent    = healthLabel
+
+		local distLabel = Instance.new("TextLabel")
+		distLabel.Size                   = UDim2.new(0, 80, 0, 10)
+		distLabel.Position               = UDim2.new(0.5, -40, 0, dotSize/2 + 26)
+		distLabel.BackgroundTransparency = 1
+		distLabel.Text                   = ""
+		distLabel.TextColor3             = Library.Theme.TextColor
+		distLabel.TextSize               = math.max(txtSize - 1, 6)
+		distLabel.Font                   = Internal.name_font
+		distLabel.TextXAlignment         = Enum.TextXAlignment.Center
+		distLabel.ZIndex                 = 7
+		distLabel.Parent                 = blip
+		local dStroke = Instance.new("UIStroke")
+		dStroke.Color     = Color3.fromRGB(0,0,0)
+		dStroke.Thickness = 1
+		dStroke.Parent    = distLabel
+
 		return {
-			Frame       = blip,
-			Dot         = dot,
-			NameLabel   = nameLabel,
-			HeightLabel = heightLabel,
-			Target      = model,
-			IsNPC       = isNPC,
-			Player      = playerObj,
-			IsLocal     = isLocal,
+			Frame        = blip,
+			Dot          = dot,
+			NameLabel    = nameLabel,
+			HealthLabel  = healthLabel,
+			DistanceLabel= distLabel,
+			HeightLabel  = heightLabel,
+			Target       = model,
+			IsNPC        = isNPC,
+			Player       = playerObj,
+			IsLocal      = isLocal,
 		}
 	end
+
 	function RadarSystem:SquareClamp(x, y, hw, hh)
 		local cx = math.clamp(x, -hw, hw)
 		local cy = math.clamp(y, -hh, hh)
 		return cx, cy, (x ~= cx or y ~= cy)
 	end
+
 	function RadarSystem:UpdateBlip(blipData, localPos, cameraCF, halfW, halfH)
 		local model    = blipData.Target
 		local rootPart = self:GetRootPart(model)
@@ -8183,57 +8412,229 @@ function Library:AddRadar()
 			if blipData.Frame then blipData.Frame.Visible = false end
 			return
 		end
+
+		-- Local-player blip
 		if blipData.IsLocal then
 			blipData.Frame.Position = UDim2.new(0, halfW, 0, halfH)
-			blipData.Frame.Visible  = true
-			if blipData.HeightLabel then blipData.HeightLabel.Text = "" end
+			blipData.Frame.Visible  = Internal.show_self and Internal.enabled
+
+			local hum = model:FindFirstChildOfClass("Humanoid")
+			blipData.NameLabel.Visible    = Internal.self_name
+			blipData.HealthLabel.Visible  = Internal.self_health
+			blipData.DistanceLabel.Visible= Internal.self_distance
+			blipData.HeightLabel.Text     = ""
+
+			blipData.NameLabel.Text = LP.DisplayName or LP.Name
+			blipData.HealthLabel.Text = (hum and Internal.self_health) and tostring(math.floor(hum.Health)) or ""
+			blipData.DistanceLabel.Text = "0"
+
 			return
 		end
-		local targetPos = rootPart.Position
-		local distance  = (targetPos - localPos).Magnitude
-		if distance > Config.max_distance then
+
+		-- Filters before positioning
+		if blipData.IsNPC and not Internal.npcs then blipData.Frame.Visible = false return end
+		if not blipData.IsNPC and not Internal.players then blipData.Frame.Visible = false return end
+
+		local playerObj = blipData.Player
+		if playerObj and self:IsPlayerBlacklisted(playerObj) then
 			blipData.Frame.Visible = false
 			return
 		end
+		if playerObj and Internal.team_check and playerObj.Team and LP.Team and playerObj.Team == LP.Team then
+			blipData.Frame.Visible = false
+			return
+		end
+
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		if Internal.ignore_dead and humanoid and humanoid.Health <= 0 then
+			blipData.Frame.Visible = false
+			return
+		end
+
+		local targetPos = rootPart.Position
+		local distance  = (targetPos - localPos).Magnitude
+		if distance > Internal.max_distance then
+			blipData.Frame.Visible = false
+			return
+		end
+
+		-- Angle / FOV check
+		if Internal.angle_radius < 360 then
+			local relativeFlat = Vector3.new(targetPos.X - localPos.X, 0, targetPos.Z - localPos.Z).Unit
+			local forward
+			if Internal.rotate_handler == "Camera" then
+				forward = cameraCF.LookVector
+			else
+				local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+				forward = lr and lr.CFrame.LookVector or cameraCF.LookVector
+			end
+			forward = Vector3.new(forward.X, 0, forward.Z).Unit
+			local dot = forward:Dot(relativeFlat)
+			if dot < math.cos(math.rad(Internal.angle_radius / 2)) then
+				blipData.Frame.Visible = false
+				return
+			end
+		end
+
+		-- Wall check
+		if Internal.ignore_behind_walls then
+			local dir = targetPos - localPos
+			local rayParams = RaycastParams.new()
+			rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+			rayParams.FilterDescendantsInstances = {LP.Character, model}
+			local result = WS:Raycast(localPos, dir, rayParams)
+			if result and result.Distance < distance - 2 then
+				blipData.Frame.Visible = false
+				return
+			end
+		end
+
+		-- Position on radar
 		local relativePos = targetPos - localPos
-		if Config.rotation_enabled then
-			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+		local yaw
+		if Internal.rotation_enabled then
+			if Internal.rotate_handler == "Camera" then
+				_, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+			else
+				local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+				if lr then
+					_, yaw, _ = lr.CFrame:ToEulerAnglesYXZ()
+				else
+					_, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+				end
+			end
 			relativePos = CFrame.Angles(0, -yaw, 0) * relativePos
 		end
-		local scale  = math.min(halfW, halfH) / Config.zoom
+
+		local scale  = math.min(halfW, halfH) / Internal.zoom
 		local radarX = relativePos.X * scale
 		local radarY = relativePos.Z * scale
-		local clampedX, clampedY, wasClamped =
-			self:SquareClamp(radarX, radarY, halfW - 8, halfH - 8)
+
+		local clampedX, clampedY, wasClamped
+		if Internal.clip_dots then
+			clampedX, clampedY, wasClamped = self:SquareClamp(radarX, radarY, halfW - 8, halfH - 8)
+		else
+			clampedX, clampedY, wasClamped = radarX, radarY, false
+		end
+
 		blipData.Frame.Position = UDim2.new(0, halfW + clampedX, 0, halfH + clampedY)
-		if Config.height_indicator and blipData.HeightLabel then
+
+		-- Height indicator
+		if Internal.height_indicator and blipData.HeightLabel then
 			local diff = targetPos.Y - localPos.Y
 			blipData.HeightLabel.Text =
-				math.abs(diff) > Config.height_threshold and (diff > 0 and "▲" or "▼") or ""
+				math.abs(diff) > Internal.height_threshold and (diff > 0 and "▲" or "▼") or ""
 		end
+
+		-- Opacity / fade
 		local opacity = 1
-		if Config.fade_with_distance then
-			opacity = math.max(1 - (distance / Config.max_distance), Config.min_opacity)
+		if Internal.fade_with_distance then
+			opacity = math.max(1 - (distance / Internal.max_distance), Internal.min_opacity)
 		end
+
+		-- Heater colors
+		if Internal.heater_colors then
+			blipData.Dot.BackgroundColor3 = HeaterColor(distance, Internal.max_distance)
+		else
+			blipData.Dot.BackgroundColor3 = blipData.IsNPC and Internal.npcs_color or Internal.players_color
+		end
+
 		blipData.Dot.BackgroundTransparency = 1 - opacity
-		if blipData.NameLabel then
-			blipData.NameLabel.TextTransparency = 1 - opacity
-			local st = blipData.NameLabel:FindFirstChildOfClass("UIStroke")
-			if st then st.Transparency = 1 - opacity end
-		end
+
+		-- Labels
+		local showName = blipData.IsNPC and Internal.npcs_name or Internal.players_name
+		blipData.NameLabel.Visible = showName
+		blipData.NameLabel.TextTransparency = 1 - opacity
+		local st = blipData.NameLabel:FindFirstChildOfClass("UIStroke")
+		if st then st.Transparency = 1 - opacity end
+
+		local showHealth = blipData.IsNPC and Internal.npcs_health or Internal.players_health
+		blipData.HealthLabel.Visible = showHealth
+		blipData.HealthLabel.Text = (humanoid and showHealth) and tostring(math.floor(humanoid.Health)) or ""
+		blipData.HealthLabel.TextTransparency = 1 - opacity
+		local hSt = blipData.HealthLabel:FindFirstChildOfClass("UIStroke")
+		if hSt then hSt.Transparency = 1 - opacity end
+
+		local showDist = blipData.IsNPC and Internal.npcs_distance or Internal.players_distance
+		blipData.DistanceLabel.Visible = showDist
+		blipData.DistanceLabel.Text = showDist and tostring(math.floor(distance)) .. " studs" or ""
+		blipData.DistanceLabel.TextTransparency = 1 - opacity
+		local dSt = blipData.DistanceLabel:FindFirstChildOfClass("UIStroke")
+		if dSt then dSt.Transparency = 1 - opacity end
+
 		if blipData.HeightLabel then
 			blipData.HeightLabel.TextTransparency = 1 - opacity
 		end
-		blipData.Frame.Visible = blipData.IsNPC and Config.npcs or Config.players
-		if blipData.NameLabel then
-			blipData.NameLabel.Visible = blipData.IsNPC and Config.npcs_name or Config.players_name
-		end
+
+		blipData.Frame.Visible = true
+
+		-- Clamped dot size
 		if wasClamped then
-			local ss = (blipData.IsNPC and Config.npc_dot_size or Config.player_dot_size) * 0.6
+			local ss = Internal.dot_size * 0.6
 			blipData.Dot.Size = UDim2.new(0, ss, 0, ss)
 		else
-			local bs = blipData.IsNPC and Config.npc_dot_size or Config.player_dot_size
-			blipData.Dot.Size = UDim2.new(0, bs, 0, bs)
+			blipData.Dot.Size = UDim2.new(0, Internal.dot_size, 0, Internal.dot_size)
+		end
+	end
+
+	function RadarSystem:UpdateWalls(localPos, cameraCF, halfW, halfH)
+		if not Internal.render_walls then
+			for _, w in ipairs(self.WallBlips) do w.Visible = false end
+			return
+		end
+
+		local scale = math.min(halfW, halfH) / Internal.zoom
+		local yaw
+		if Internal.rotation_enabled then
+			if Internal.rotate_handler == "Camera" then
+				_, yaw, _ = cameraCF:ToEulerAnglesYXZ()
+			else
+				local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+				if lr then _, yaw, _ = lr.CFrame:ToEulerAnglesYXZ() end
+			end
+		end
+
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+		rayParams.FilterDescendantsInstances = {LP.Character}
+
+		local idx = 0
+		for angle = 0, 359, 15 do
+			local rad = math.rad(angle)
+			local dir = Vector3.new(math.sin(rad), 0, math.cos(rad)) * Internal.max_distance
+			local result = WS:Raycast(localPos, dir, rayParams)
+			if result then
+				idx = idx + 1
+				local w = self.WallBlips[idx]
+				if not w then
+					w = Instance.new("Frame")
+					w.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+					w.BorderSizePixel  = 0
+					w.Size             = UDim2.new(0, 2, 0, 2)
+					w.ZIndex           = 2
+					w.Parent           = WallContainer
+					local wc = Instance.new("UICorner")
+					wc.CornerRadius = UDim.new(1, 0)
+					wc.Parent = w
+					self.WallBlips[idx] = w
+				end
+				w.Visible = true
+
+				local rel = result.Position - localPos
+				if yaw then
+					rel = CFrame.Angles(0, -yaw, 0) * rel
+				end
+				local wx = rel.X * scale
+				local wy = rel.Z * scale
+				if Internal.clip_dots then
+					wx = math.clamp(wx, -halfW + 2, halfW - 2)
+					wy = math.clamp(wy, -halfH + 2, halfH - 2)
+				end
+				w.Position = UDim2.new(0, halfW + wx, 0, halfH + wy)
+			end
+		end
+		for i = idx + 1, #self.WallBlips do
+			self.WallBlips[i].Visible = false
 		end
 	end
 
@@ -8245,53 +8646,75 @@ function Library:AddRadar()
 		local cameraCF = WS.CurrentCamera.CFrame
 		local halfW    = Holder.AbsoluteSize.X / 2
 		local halfH    = Holder.AbsoluteSize.Y / 2
-		if Config.size ~= lastSize then
-			lastSize = Config.size
-			Main.Size = UDim2.new(0, Config.size + 10, 0, Config.size + 40)
+
+		-- Size sync
+		if Internal.size ~= lastSize then
+			lastSize = Internal.size
+			Main.Size = UDim2.new(0, Internal.size + 10, 0, Internal.size + 40)
 		end
-		if Config.grid_size ~= lastGridSize or Config.grid_enabled ~= lastGridEnabled then
+
+		-- Position sync
+		Main.Position = UDim2.new(0, Internal.position.X, 0, Internal.position.Y)
+
+		-- Grid rebuild
+		if Internal.grid_size ~= lastGridSize or Internal.grid_enabled ~= lastGridEnabled then
 			buildGrid()
 		end
 
-		-- Grid rotation handling
-		if Config.grid_enabled and not Config.grid_static and Config.rotation_enabled then
-			local _, yaw, _ = cameraCF:ToEulerAnglesYXZ()
-			GridContainer.Rotation = math.deg(yaw)
+		-- Grid rotation
+		if Internal.grid_enabled and Internal.rotation_enabled then
+			local y
+			if Internal.rotate_handler == "Camera" then
+				_, y, _ = cameraCF:ToEulerAnglesYXZ()
+			else
+				local lr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+				if lr then _, y, _ = lr.CFrame:ToEulerAnglesYXZ() else _, y, _ = cameraCF:ToEulerAnglesYXZ() end
+			end
+			GridContainer.Rotation = math.deg(y)
 		else
 			GridContainer.Rotation = 0
 		end
 
-		-- Moving grid offset based on player position
-		if Config.moving_grid then
-			local scale = math.min(halfW, halfH) / Config.zoom
-			local gridOffsetX = (localPos.X % (Config.zoom * 2)) * scale
-			local gridOffsetY = (localPos.Z % (Config.zoom * 2)) * scale
+		-- Moving grid
+		if Internal.moving_grid then
+			local scale = math.min(halfW, halfH) / Internal.zoom
+			local gridOffsetX = (localPos.X % (Internal.zoom * 2)) * scale
+			local gridOffsetY = (localPos.Z % (Internal.zoom * 2)) * scale
 			GridContainer.Position = UDim2.new(0.5, gridOffsetX - halfW, 0.5, gridOffsetY - halfH)
 		else
 			GridContainer.Position = UDim2.new(0.5, 0, 0.5, 0)
 		end
 
+		-- Targets
 		local targets    = {}
 		local activeKeys = {}
-		table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP })
-		for _, player in ipairs(Players:GetPlayers()) do
-			if player ~= LP and player.Character then
-				table.insert(targets, { Model = player.Character, IsNPC = false, Player = player })
+
+		if Internal.show_self then
+			table.insert(targets, { Model = LP.Character, IsNPC = false, Player = LP })
+		end
+		if Internal.players then
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LP and player.Character then
+					table.insert(targets, { Model = player.Character, IsNPC = false, Player = player })
+				end
 			end
 		end
-		for _, obj in ipairs(WS:GetDescendants()) do
-			if obj:IsA("Model") and obj ~= LP.Character then
-				if self:IsNPC(obj) then
-					local isPlayerChar = false
-					for _, p in ipairs(Players:GetPlayers()) do
-						if p.Character == obj then isPlayerChar = true; break end
-					end
-					if not isPlayerChar then
-						table.insert(targets, { Model = obj, IsNPC = true, Player = nil })
+		if Internal.npcs then
+			for _, obj in ipairs(WS:GetDescendants()) do
+				if obj:IsA("Model") and obj ~= LP.Character then
+					if self:IsNPC(obj) then
+						local isPlayerChar = false
+						for _, p in ipairs(Players:GetPlayers()) do
+							if p.Character == obj then isPlayerChar = true; break end
+						end
+						if not isPlayerChar then
+							table.insert(targets, { Model = obj, IsNPC = true, Player = nil })
+						end
 					end
 				end
 			end
 		end
+
 		for _, target in ipairs(targets) do
 			local key = tostring(target.Model)
 			activeKeys[key] = true
@@ -8299,10 +8722,10 @@ function Library:AddRadar()
 			if not self.Blips[key] or not self.Blips[key].Frame then
 				self.Blips[key] = self:CreateBlip(target.Model, target.IsNPC, target.Player)
 			end
-
 			self:UpdateBlip(self.Blips[key], localPos, cameraCF, halfW, halfH)
 		end
 
+		-- Cleanup dead blips
 		local toRemove = {}
 		for key, data in pairs(self.Blips) do
 			if not activeKeys[key] or not data.Target or not data.Target.Parent then
@@ -8314,49 +8737,39 @@ function Library:AddRadar()
 			if data and data.Frame then data.Frame:Destroy() end
 			self.Blips[key] = nil
 		end
+
+		-- Walls
+		self:UpdateWalls(localPos, cameraCF, halfW, halfH)
 	end
+
+	-- ── Public API ─────────────────────────────────────────────────────────
 	local RadarAPI = {}
-	local CLAMPS = {
-		zoom               = function(v) return math.clamp(v, 20, 1000)          end,
-		max_distance       = function(v) return math.clamp(v, 1, 10000)          end,
-		size               = function(v) return math.clamp(v, 80, 600)           end,
-		grid_size           = function(v) return math.clamp(math.floor(v), 2, 30) end,
-		min_opacity         = function(v) return math.clamp(v, 0, 1)              end,
-		player_dot_size      = function(v) return math.clamp(v, 2, 20)             end,
-		npc_dot_size         = function(v) return math.clamp(v, 2, 20)             end,
-		local_player_dot_size = function(v) return math.clamp(v, 2, 20)             end,
-		name_text_size       = function(v) return math.clamp(v, 6, 24)             end,
-		height_threshold    = function(v) return math.max(v, 0)                   end,
-	}
+
+	function RadarAPI:SetConfig(t)
+		assert(type(t) == "table", "[Radar:SetConfig] expects a table")
+		DeepMerge(Config, t)
+		SyncInternal()
+		-- Immediate side-effects
+		Main.Visible = Internal.enabled
+		UpdateDraggable()
+	end
+
+	function RadarAPI:GetConfig()
+		return DeepCopy(Config)
+	end
 
 	function RadarAPI:GetRadar()
 		return Main
 	end
 
-	function RadarAPI:Set(t)
-		assert(type(t) == "table", "[Radar:Set] expects a table")
-		for key, value in pairs(t) do
-			if key == "ignored_npc_names" and type(value) == "table" then
-				-- Replace entire list with provided names
-				Config.ignored_npc_names = {}
-				for _, name in ipairs(value) do
-					table.insert(Config.ignored_npc_names, tostring(name))
-				end
-			elseif Config[key] ~= nil then
-				Config[key] = CLAMPS[key] and CLAMPS[key](value) or value
-			end
+	function RadarAPI:Toggle(state)
+		if state == nil then
+			Internal.enabled = not Internal.enabled
+		else
+			Internal.enabled = not not state
 		end
-	end
-
-	function RadarAPI:Get(key)
-		if key ~= nil then
-			return Config[key]
-		end
-		local copy = {}
-		for k, v in pairs(Config) do
-			copy[k] = type(v) == "table" and table.clone(v) or v
-		end
-		return copy
+		Config.Settings.Enabled = Internal.enabled
+		Main.Visible = Internal.enabled
 	end
 
 	function RadarAPI:Destroy()
@@ -8366,8 +8779,11 @@ function Library:AddRadar()
 		Main:Destroy()
 	end
 
+	-- ── Connections ────────────────────────────────────────────────────────
 	table.insert(RadarSystem.Connections, RunService.RenderStepped:Connect(function()
-		RadarSystem:Update()
+		if Internal.enabled then
+			RadarSystem:Update()
+		end
 	end))
 
 	table.insert(RadarSystem.Connections, LP.CharacterAdded:Connect(function()
@@ -8386,6 +8802,18 @@ function Library:AddRadar()
 		end
 	end))
 
+	table.insert(RadarSystem.Connections, UIS.InputChanged:Connect(function(input, gameProcessed)
+		if not Internal.scroll_zoom or gameProcessed then return end
+		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			local delta = input.Position.Z
+			local newZoom = Internal.zoom - delta * 5
+			newZoom = math.clamp(newZoom, 20, 1000)
+			Internal.zoom = newZoom
+			Config.Settings.Zoom = newZoom
+		end
+	end))
+
+	SyncInternal()
 	return RadarAPI
 end
 
