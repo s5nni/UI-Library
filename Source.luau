@@ -7936,53 +7936,43 @@ function Library:AddRadar(initialConfig)
 	local PFS        = game:GetService("PathfindingService")
 	local LP         = Players.LocalPlayer
 
-	-- ── Default config (all lowercase keys) ────────────────────────────────
+	-- ── Default config ───────────────────────────────────────────────────────
 	local Config = {
-		-- Radar visibility
-		enabled                    = true,
+		enabled                      = true,
+		clipsdescendants             = false,
+		zoom                         = 100,
+		size                         = 200,
+		maxdistance                  = 1000,
+		fadeondistance               = true,
+		distancetofade               = 700,
+		grid                         = true,
+		gridcolor                    = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(16, 16, 16)),
+		gridsize                     = 10,
+		gridspacing                  = 20,
+		gridthickness                = 1,
+		gridrotate                   = true,
+		gridstatic                   = true,
+		ignorebehindwalls            = false,
+		radarfieldofview             = 360,
 
-		-- Canvas
-		clipsdescendants           = false,   -- clips dots inside the borders
-		zoom                       = 100,    -- world units visible from center to edge
-		size                       = 200,    -- radar square size in pixels
-		maxdistance                = 1000,   -- hide dots beyond this world distance
+		-- Surroundings
+		rendersurroundings           = true,
+		ignoreterrain                = false,
+		ignorenoncollidable          = false,
+		rendercolor                  = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(30, 30, 36)),
+		rendersize                   = 3,
+		maxrenderhits                = 60,
 
-		-- Fade
-		fadeondistance             = true,   -- fade dots as they approach maxdistance
-		distancetofade             = 700,    -- world distance at which fading begins
-
-		-- Grid
-		grid                       = true,
-		gridcolor                  = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(16, 16, 16)),
-		gridsize                   = 10,     -- informational number of major cells
-		gridspacing                = 20,     -- pixel spacing between grid lines
-		gridthickness              = 1,      -- grid line thickness in pixels
-		gridrotate                 = true,   -- rotate grid with camera look vector
-		gridstatic                 = true,  -- when true: grid scrolls with player world position
-
-		-- Detection
-		ignorebehindwalls          = false,  -- hide dots occluded by geometry (raycast)
-		radarfieldofview           = 360,    -- degrees; dots outside FOV are hidden (uses player body)
-
-		-- Surroundings rendering (raycast-based dots on geometry hits)
-		rendersurroundings         = true,
-		ignoreterrain              = false,   -- skip terrain hits
-		ignorenoncollidable        = false,  -- skip CanCollide=false hits
-		rendercolor                = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(30, 30, 36)),
-		rendersize                 = 3,      -- size of each surroundings dot in pixels
-		maxrenderhits              = 60,     -- cap on surroundings dots per frame
-
-		-- Pathway (PathfindingService path from player to each dot)
-		pathwaydots                = true,
-		pathwaycolor               = Color3.fromRGB(255, 220, 80),
-		pathwaythickness           = 1,      -- line thickness in pixels
+		-- Reflectional surroundings
+		reflectionalrender           = false,  -- each hit point also casts rays outward
+		reflectionalbounces          = 2,      -- how many times the reflection cascades
+		reflectivedots               = false,  -- also run reflection logic on dot positions
 
 		-- Interaction
-		isdraggable                = true,
+		isdraggable                  = true,
 		isinteractivewithscrollwheel = true,
 	}
 
-	-- Merge optional creation-time config
 	if type(initialConfig) == "table" then
 		for k, v in pairs(initialConfig) do
 			if Config[k] ~= nil then Config[k] = v end
@@ -7997,7 +7987,6 @@ function Library:AddRadar(initialConfig)
 		return c
 	end
 
-	-- Accepts Vector2 (XZ) or Vector3; refY used for the Y component of Vector2
 	local function toVec3(pos, refY)
 		if typeof(pos) == "Vector2" then
 			return Vector3.new(pos.X, refY or 0, pos.Y)
@@ -8005,7 +7994,6 @@ function Library:AddRadar(initialConfig)
 		return pos
 	end
 
-	-- Project a world position into radar pixel coords
 	local function project(worldPos, localPos, yaw, scale, halfW, halfH)
 		local rel     = worldPos - localPos
 		local rotated = CFrame.Angles(0, -yaw, 0) * rel
@@ -8021,7 +8009,6 @@ function Library:AddRadar(initialConfig)
 		Size             = UDim2.new(0, Config.size + 10, 0, Config.size + 40),
 	}, UDim.new(0, 6))
 
-	-- Accent strip at top
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.Accent,
 		BorderSizePixel  = 0,
@@ -8029,7 +8016,6 @@ function Library:AddRadar(initialConfig)
 		ZIndex           = 12,
 	}, UDim.new(0, 2)).Parent = Main
 
-	-- Title / drag bar
 	local TitleBar = SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.TopbarColor,
 		BorderSizePixel  = 0,
@@ -8052,7 +8038,6 @@ function Library:AddRadar(initialConfig)
 	})
 	TitleLabel.Parent = TitleBar
 
-	-- Divider
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.BackgroundColor,
 		BorderSizePixel  = 0,
@@ -8060,7 +8045,6 @@ function Library:AddRadar(initialConfig)
 		Size             = UDim2.new(1, 0, 0, 1),
 	}).Parent = Main
 
-	-- Canvas holder
 	local Holder = SelfModules.UI.Create("Frame", {
 		Name             = "Holder",
 		BackgroundColor3 = Library.Theme.BackgroundColor,
@@ -8071,7 +8055,6 @@ function Library:AddRadar(initialConfig)
 	}, UDim.new(0, 5))
 	Holder.Parent = Main
 
-	-- Dot layer – CanvasGroup auto-clips blips at the rounded border
 	local DotContainer = SelfModules.UI.Create("CanvasGroup", {
 		Name                   = "Dots",
 		BackgroundTransparency = 1,
@@ -8086,7 +8069,7 @@ function Library:AddRadar(initialConfig)
 		SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
 	end
 	Main.Parent = ScreenGui
-	-- Grid – 1.5× oversized, AnchorPoint centred → rotation never leaves gaps
+
 	local GridContainer = SelfModules.UI.Create("Frame", {
 		Name                   = "Grid",
 		BackgroundTransparency = 1,
@@ -8097,7 +8080,6 @@ function Library:AddRadar(initialConfig)
 	})
 	GridContainer.Parent = DotContainer
 
-	-- Surroundings dot layer
 	local SurrContainer = Instance.new("Frame")
 	SurrContainer.Name               = "Surroundings"
 	SurrContainer.BackgroundTransparency = 1
@@ -8105,7 +8087,6 @@ function Library:AddRadar(initialConfig)
 	SurrContainer.ZIndex             = 2
 	SurrContainer.Parent             = DotContainer
 
-	-- Pathway line layer
 	local PathContainer = Instance.new("Frame")
 	PathContainer.Name               = "Pathway"
 	PathContainer.BackgroundTransparency = 1
@@ -8114,7 +8095,6 @@ function Library:AddRadar(initialConfig)
 	PathContainer.Parent             = DotContainer
 
 	-- ── Grid builder ─────────────────────────────────────────────────────────
-	-- Snapshot of the last build parameters so we only rebuild on actual changes
 	local _gs = {}
 
 	local function buildGrid()
@@ -8126,11 +8106,8 @@ function Library:AddRadar(initialConfig)
 			color     = Config.gridcolor,
 			size      = Config.size,
 		}
-
 		if not Config.grid then return end
 
-		-- The GridContainer is 1.5× the holder (≈ 1.5 × Config.size pixels)
-		-- Place lines at `gridspacing`-pixel intervals across that area
 		local approxPx = Config.size * 1.5
 		local sp       = math.max(Config.gridspacing, 1)
 		local n        = math.ceil(approxPx / sp) + 1
@@ -8140,14 +8117,12 @@ function Library:AddRadar(initialConfig)
 		for i = 0, n do
 			local pct = (i * sp) / approxPx
 			if pct > 1 then break end
-
 			local vl = Instance.new("Frame")
 			vl.BackgroundColor3 = col
 			vl.BorderSizePixel  = 0
 			vl.Position         = UDim2.new(pct, 0, 0, 0)
 			vl.Size             = UDim2.new(0, t, 1, 0)
 			vl.Parent           = GridContainer
-
 			local hl = Instance.new("Frame")
 			hl.BackgroundColor3 = col
 			hl.BorderSizePixel  = 0
@@ -8210,18 +8185,102 @@ function Library:AddRadar(initialConfig)
 	wallParams.FilterType = Enum.RaycastFilterType.Exclude
 
 	-- ── Dot & path storage ───────────────────────────────────────────────────
-	local Dots      = {}
-	local PathWaypoints = {} -- [name] = {Vector3...}  (latest result, updated each frame)
-	local PathPending   = {} -- [name] = true           (compute already in-flight this frame)
+	local Dots          = {}
+	local PathWaypoints = {}   -- [name] = {Vector3, ...}
+	local PathPending   = {}   -- [name] = true
+	local PathQueue     = {}   -- ordered list of names waiting for a compute slot
+	local PathQueueSet  = {}   -- [name] = true  (fast membership test)
+	local PathCooldown  = {}   -- [name] = tick() of last completed compute
+	local PATH_COOLDOWN = 2    -- seconds between re-computes via :Update()
 
+	-- ── Pathfinding queue ─────────────────────────────────────────────────────
+	-- One goroutine processes the queue sequentially so computes don't pile up.
+	local queueRunning = false
+
+	local function enqueuePathRequest(name)
+		if PathQueueSet[name] or PathPending[name] then return end
+		PathQueueSet[name] = true
+		table.insert(PathQueue, name)
+	end
+
+	local function processQueue()
+		if queueRunning then return end
+		queueRunning = true
+
+		task.spawn(function()
+			while #PathQueue > 0 do
+				local name = table.remove(PathQueue, 1)
+				PathQueueSet[name] = nil
+
+				local obj = Dots[name]
+				if not obj or not obj.data.renderpath then
+					-- dot removed or path rendering disabled – skip
+					task.wait()
+					continue
+				end
+
+				local rawPos  = obj.data.position
+				local char    = LP.Character
+				local root    = char and char:FindFirstChild("HumanoidRootPart")
+				if not rawPos or not root then
+					task.wait()
+					continue
+				end
+
+				local localPos = root.Position
+				local worldPos = toVec3(rawPos, localPos.Y)
+
+				PathPending[name] = true
+
+				local path = PFS:CreatePath({
+					AgentRadius   = 2,
+					AgentHeight   = 5,
+					AgentCanJump  = true,
+					AgentMaxSlope = 45,
+				})
+
+				local ok = pcall(path.ComputeAsync, path, localPos, worldPos)
+				PathPending[name] = nil
+
+				if ok and path.Status == Enum.PathStatus.Success then
+					local wps = {}
+					for _, wp in ipairs(path:GetWaypoints()) do
+						table.insert(wps, wp.Position)
+					end
+					PathWaypoints[name] = wps
+				else
+					PathWaypoints[name] = nil
+				end
+
+				PathCooldown[name] = tick()
+				task.wait()   -- yield one frame between computes
+			end
+
+			queueRunning = false
+		end)
+	end
+
+	-- Called each frame per-dot: only re-enqueues if cooldown has passed
+	local function requestPath(name, force)
+		local cd = PathCooldown[name]
+		if not force and cd and (tick() - cd) < PATH_COOLDOWN then return end
+		enqueuePathRequest(name)
+		processQueue()
+	end
+
+	-- ── Dot spawning ─────────────────────────────────────────────────────────
 	local function spawnDot(name, data)
-		local ds    = data.dotsize   or 5
-		local color = data.color     or Color3.fromRGB(255, 255, 255)
-		local font  = data.font      or Enum.Font.Gotham
-		local ts    = data.titlesize or 9
-		local title = data.title     -- string | nil | false
+		local ds    = data.dotsize    or 5
+		local color = data.color      or Color3.fromRGB(255, 255, 255)
+		local font  = data.font       or Enum.Font.Gotham
+		local ts    = data.titlesize  or 9
+		local title = data.title
 
-		-- Zero-size anchor frame – purely a position marker
+		-- Per-dot path settings
+		local rp  = data.renderpath    ~= nil and data.renderpath    or false
+		local pc  = data.pathcolor     or Color3.fromRGB(255, 220, 80)
+		local pt  = data.paththickness or 1
+
 		local anchor = Instance.new("Frame")
 		anchor.Name                   = name
 		anchor.BackgroundTransparency = 1
@@ -8230,8 +8289,6 @@ function Library:AddRadar(initialConfig)
 		anchor.ZIndex                 = 5
 		anchor.Parent                 = DotContainer
 
-		-- Dot: AnchorPoint(0.5,0.5) + Position(0,0,0,0) keeps it dead-centred
-		-- on the anchor regardless of what dotsize is set to
 		local dot = Instance.new("Frame")
 		dot.Name             = "Dot"
 		dot.AnchorPoint      = Vector2.new(0.5, 0.5)
@@ -8241,12 +8298,8 @@ function Library:AddRadar(initialConfig)
 		dot.BorderSizePixel  = 0
 		dot.ZIndex           = 6
 		dot.Parent           = anchor
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(1, 0)
-		corner.Parent       = dot
-
-		-- Title label anchored to the centre of the 0×0 frame, offset downward
 		local lbl = Instance.new("TextLabel")
 		lbl.Name                   = "Title"
 		lbl.AnchorPoint            = Vector2.new(0.5, 0)
@@ -8269,12 +8322,15 @@ function Library:AddRadar(initialConfig)
 
 		return {
 			data = {
-				position  = data.position,
-				color     = color,
-				dotsize   = ds,
-				title     = title,
-				font      = font,
-				titlesize = ts,
+				position      = data.position,
+				color         = color,
+				dotsize       = ds,
+				title         = title,
+				font          = font,
+				titlesize     = ts,
+				renderpath    = rp,
+				pathcolor     = pc,
+				paththickness = pt,
 			},
 			Frame = anchor,
 			Dot   = dot,
@@ -8283,13 +8339,15 @@ function Library:AddRadar(initialConfig)
 	end
 
 	local function applyData(obj, data)
-		-- Only update keys that are actually present in the incoming table
-		if data.position  ~= nil then obj.data.position  = data.position  end
-		if data.color     ~= nil then obj.data.color     = data.color     end
-		if data.dotsize   ~= nil then obj.data.dotsize   = data.dotsize   end
-		if data.title     ~= nil then obj.data.title     = data.title     end
-		if data.font      ~= nil then obj.data.font      = data.font      end
-		if data.titlesize ~= nil then obj.data.titlesize = data.titlesize end
+		if data.position      ~= nil then obj.data.position      = data.position      end
+		if data.color         ~= nil then obj.data.color         = data.color         end
+		if data.dotsize       ~= nil then obj.data.dotsize       = data.dotsize       end
+		if data.title         ~= nil then obj.data.title         = data.title         end
+		if data.font          ~= nil then obj.data.font          = data.font          end
+		if data.titlesize     ~= nil then obj.data.titlesize     = data.titlesize     end
+		if data.renderpath    ~= nil then obj.data.renderpath    = data.renderpath    end
+		if data.pathcolor     ~= nil then obj.data.pathcolor     = data.pathcolor     end
+		if data.paththickness ~= nil then obj.data.paththickness = data.paththickness end
 
 		local ds    = obj.data.dotsize
 		local color = obj.data.color
@@ -8308,17 +8366,35 @@ function Library:AddRadar(initialConfig)
 		obj.Label.Visible        = type(title) == "string" and title ~= ""
 	end
 
+	-- ── Reflectional surroundings helper ─────────────────────────────────────
+	-- Recursively casts rays from a hit point and collects all secondary hits.
+	-- `results` is the flat table we append {Position = Vector3} into.
+	-- `depth` counts down from reflectionalbounces to 0.
+	local RAY_COUNT_REFLECT = 12   -- rays per reflection origin (lighter than primary)
+
+	local function castReflections(origin, depth, results, params, maxHits)
+		if depth <= 0 then return end
+		for i = 0, RAY_COUNT_REFLECT - 1 do
+			if #results >= maxHits then return end
+			local angle = (i / RAY_COUNT_REFLECT) * math.pi * 2
+			local dir   = Vector3.new(math.sin(angle), 0, math.cos(angle))
+			local hit   = WS:Raycast(origin, dir * 60, params)  -- shorter radius for reflections
+			if hit then
+				table.insert(results, { Position = hit.Position, Instance = hit.Instance })
+				castReflections(hit.Position, depth - 1, results, params, maxHits)
+			end
+		end
+	end
+
 	-- ── Core system ──────────────────────────────────────────────────────────
 	local System = { Connections = {} }
 	local lastSize = Config.size
 
-	-- Camera yaw is used for radar rotation and grid rotation
 	local function getCameraYaw()
 		local _, yaw, _ = WS.CurrentCamera.CFrame:ToEulerAnglesYXZ()
 		return yaw
 	end
 
-	-- FOV check uses the character's body direction (HumanoidRootPart look vector)
 	local function inFOV(charCF, targetPos)
 		if Config.radarfieldofview >= 360 then return true end
 		local fwd = Vector3.new(charCF.LookVector.X, 0, charCF.LookVector.Z)
@@ -8331,7 +8407,6 @@ function Library:AddRadar(initialConfig)
 		return math.deg(math.acos(math.clamp(fwd:Dot(td), -1, 1))) <= Config.radarfieldofview / 2
 	end
 
-	-- Wall occlusion: filter all player characters so they never block dots
 	local function occludedByWall(fromPos, toPos)
 		local filter = {}
 		for _, p in ipairs(Players:GetPlayers()) do
@@ -8341,39 +8416,27 @@ function Library:AddRadar(initialConfig)
 		return WS:Raycast(fromPos, toPos - fromPos, wallParams) ~= nil
 	end
 
-	-- Async pathfinding with TTL-based cache
-	local function requestPath(name, localPos, worldPos)
-		-- Fire a new compute every frame; the previous result keeps rendering
-		-- until the new one lands (no stale TTL, no single-fire caching)
-		if PathPending[name] then return end
-		PathPending[name] = true
-
-		task.spawn(function()
-			PathPending[name] = nil  -- clear before yield so next frame can re-fire
-
-			local path = PFS:CreatePath({
-				AgentRadius   = 2,
-				AgentHeight   = 5,
-				AgentCanJump  = true,
-				AgentMaxSlope = 45,
-			})
-
-			local ok = pcall(path.ComputeAsync, path, localPos, worldPos)
-			if ok and path.Status == Enum.PathStatus.Success then
-				local wps = {}
-				for _, wp in ipairs(path:GetWaypoints()) do
-					table.insert(wps, wp.Position)
-				end
-				PathWaypoints[name] = wps
-			else
-				PathWaypoints[name] = nil
+	-- ── Helper: validate and push a surroundings hit into the results list ───
+	local function acceptSurrHit(hit, results)
+		if not hit then return end
+		local inst   = hit.Instance
+		local isTerr = inst:IsA("Terrain")
+		if Config.ignoreterrain and isTerr then return end
+		if Config.ignorenoncollidable
+			and not isTerr
+			and inst:IsA("BasePart")
+			and not inst.CanCollide then return end
+		if not isTerr then
+			local anc = inst.Parent
+			while anc and anc ~= WS do
+				if anc:FindFirstChildOfClass("Humanoid") then return end
+				anc = anc.Parent
 			end
-		end)
+		end
+		table.insert(results, hit)
 	end
 
-
 	function System:Update()
-		-- Master switch
 		if not Config.enabled then Main.Visible = false; return end
 		Main.Visible = true
 
@@ -8384,24 +8447,22 @@ function Library:AddRadar(initialConfig)
 		local localPos = root.Position
 		local charCF   = root.CFrame
 		local yaw      = getCameraYaw()
-
-		local halfW = Holder.AbsoluteSize.X / 2
-		local halfH = Holder.AbsoluteSize.Y / 2
+		local halfW    = Holder.AbsoluteSize.X / 2
+		local halfH    = Holder.AbsoluteSize.Y / 2
 		if halfW <= 0 or halfH <= 0 then return end
 
 		local scale = math.min(halfW, halfH) / math.max(Config.zoom, 1)
 
-		-- ── Live size change ───────────────────────────────────────────────
+		-- Live size change
 		if Config.size ~= lastSize then
 			lastSize  = Config.size
 			Main.Size = UDim2.new(0, Config.size + 10, 0, Config.size + 40)
 		end
 
-		-- ── ClipsDescendants ───────────────────────────────────────────────
 		Holder.ClipsDescendants = Config.clipsdescendants
 
-		-- ── Grid rebuild on change ─────────────────────────────────────────
-		if Config.grid        ~= _gs.enabled
+		-- Grid rebuild on change
+		if Config.grid         ~= _gs.enabled
 			or Config.gridspacing  ~= _gs.spacing
 			or Config.gridthickness ~= _gs.thickness
 			or Config.gridcolor    ~= _gs.color
@@ -8409,17 +8470,13 @@ function Library:AddRadar(initialConfig)
 			buildGrid()
 		end
 
-		-- ── Grid rotation & static offset ──────────────────────────────────
+		-- Grid rotation & static offset
 		if Config.grid then
 			GridContainer.Rotation = Config.gridrotate and math.deg(yaw) or 0
-
 			if Config.gridstatic then
-				-- The grid appears anchored in world-space and scrolls as the
-				-- player walks. Phase offset = (player world coord × scale) mod spacing.
 				local sp = math.max(Config.gridspacing, 1)
 				local ox = (localPos.X * scale) % sp
 				local oz = (localPos.Z * scale) % sp
-				-- Rotate the offset into radar-space if the grid is also rotating
 				if Config.gridrotate then
 					local sv = CFrame.Angles(0, -yaw, 0) * Vector3.new(ox, 0, oz)
 					ox, oz = sv.X, sv.Z
@@ -8430,52 +8487,51 @@ function Library:AddRadar(initialConfig)
 			end
 		end
 
-		-- ── Surroundings ───────────────────────────────────────────────────
+		-- ── Surroundings ─────────────────────────────────────────────────────
 		local surrIdx = 0
 		if Config.rendersurroundings then
 			surrParams.FilterDescendantsInstances = { LP.Character }
 
-			local RAY_COUNT = 72          -- 5° per ray
-			local RAY_DIST  = Config.maxdistance
-			local rCol      = Config.rendercolor
-			local rSz       = math.max(1, Config.rendersize)
-			local maxHits   = math.max(1, Config.maxrenderhits)
+			local RAY_COUNT  = 72
+			local RAY_DIST   = Config.maxdistance
+			local rCol       = Config.rendercolor
+			local rSz        = math.max(1, Config.rendersize)
+			local maxHits    = math.max(1, Config.maxrenderhits)
+			local doReflect  = Config.reflectionalrender
+			local bounces    = math.max(0, Config.reflectionalbounces)
+			local refDots    = Config.reflectivedots
 
+			-- Collect all primary hits
+			local primaryHits = {}
 			for i = 0, RAY_COUNT - 1 do
-				if surrIdx >= maxHits then break end
-
 				local angle = (i / RAY_COUNT) * math.pi * 2
 				local dir   = Vector3.new(math.sin(angle), 0, math.cos(angle))
-				local hit   = WS:Raycast(localPos, dir * RAY_DIST, surrParams)
-				if not hit then continue end
+				acceptSurrHit(WS:Raycast(localPos, dir * RAY_DIST, surrParams), primaryHits)
+			end
 
-				local inst   = hit.Instance
-				local isTerr = inst:IsA("Terrain")
-
-				-- ignoreterrain: when true, skip terrain hits
-				if Config.ignoreterrain and isTerr then continue end
-
-				-- ignorenoncollidable: skip CanCollide=false BaseParts
-				if Config.ignorenoncollidable
-					and not isTerr
-					and inst:IsA("BasePart")
-					and not inst.CanCollide then
-					continue
+			-- Collect reflection hits from each primary hit origin
+			local allHits = {}
+			for _, hit in ipairs(primaryHits) do
+				table.insert(allHits, hit)
+				if doReflect and bounces > 0 then
+					castReflections(hit.Position, bounces, allHits, surrParams, maxHits)
 				end
+			end
 
-				-- Skip any instance parented under a humanoid model
-				if not isTerr then
-					local hasHuman = false
-					local anc = inst.Parent
-					while anc and anc ~= WS do
-						if anc:FindFirstChildOfClass("Humanoid") then
-							hasHuman = true; break
-						end
-						anc = anc.Parent
+			-- Also cast reflections from each visible dot position
+			if refDots and bounces > 0 then
+				for _, obj in pairs(Dots) do
+					local rawPos = obj.data.position
+					if rawPos then
+						local wp = toVec3(rawPos, localPos.Y)
+						castReflections(wp, bounces, allHits, surrParams, maxHits)
 					end
-					if hasHuman then continue end
 				end
+			end
 
+			-- Render collected hits
+			for _, hit in ipairs(allHits) do
+				if surrIdx >= maxHits then break end
 				local rx, ry = project(hit.Position, localPos, yaw, scale, halfW, halfH)
 				surrIdx += 1
 				local d = getSurrDot(surrIdx)
@@ -8487,11 +8543,10 @@ function Library:AddRadar(initialConfig)
 		end
 		hideSurrFrom(surrIdx + 1)
 
-		-- ── Dots ───────────────────────────────────────────────────────────
+		-- ── Dots & per-dot pathways ───────────────────────────────────────────
 		local pathIdx = 0
 
 		for name, obj in pairs(Dots) do
-			-- Clean up orphaned entries
 			if not obj.Frame or not obj.Frame.Parent then
 				Dots[name] = nil
 				continue
@@ -8508,31 +8563,25 @@ function Library:AddRadar(initialConfig)
 				worldPos.X - localPos.X, 0, worldPos.Z - localPos.Z
 			).Magnitude
 
-			-- Beyond maximum distance
 			if flatDist > Config.maxdistance then
 				obj.Frame.Visible = false
 				continue
 			end
 
-			-- Field-of-view filter (character body direction)
 			if Config.radarfieldofview < 360 and not inFOV(charCF, worldPos) then
 				obj.Frame.Visible = false
 				continue
 			end
 
-			-- Wall occlusion
 			if Config.ignorebehindwalls and occludedByWall(localPos, worldPos) then
 				obj.Frame.Visible = false
 				continue
 			end
 
-			-- Position on radar
 			local rx, ry = project(worldPos, localPos, yaw, scale, halfW, halfH)
 			obj.Frame.Position = UDim2.new(0, rx, 0, ry)
 			obj.Frame.Visible  = true
 
-			-- Refresh dot size, color and label offset live every frame so any
-			-- changes made via :Update() or direct data mutation apply instantly
 			local ds    = obj.data.dotsize
 			local color = obj.data.color
 			obj.Dot.Size             = UDim2.new(0, ds, 0, ds)
@@ -8540,7 +8589,7 @@ function Library:AddRadar(initialConfig)
 			obj.Label.Position       = UDim2.new(0, 0, 0, ds / 2 + 2)
 			obj.Label.TextColor3     = color
 
-			-- Distance fade: alpha goes from 1 at distancetofade to ~0 at maxdistance
+			-- Fade
 			local alpha = 1
 			if Config.fadeondistance then
 				local fadeStart = math.min(Config.distancetofade, Config.maxdistance)
@@ -8550,19 +8599,20 @@ function Library:AddRadar(initialConfig)
 					alpha = math.max(1 - t, 0.08)
 				end
 			end
-			obj.Dot.BackgroundTransparency  = 1 - alpha
-			obj.Label.TextTransparency      = 1 - alpha
+			obj.Dot.BackgroundTransparency = 1 - alpha
+			obj.Label.TextTransparency     = 1 - alpha
 			local stroke = obj.Label:FindFirstChildOfClass("UIStroke")
 			if stroke then stroke.Transparency = 1 - alpha end
 
-			-- In the pathway section inside the dot loop:
-			if Config.pathwaydots then
-				requestPath(name, localPos, worldPos)
+			-- Per-dot pathway
+			if obj.data.renderpath then
+				-- Only re-enqueue if enough time has passed (frame-level throttle)
+				requestPath(name, false)
 
-				local wps = PathWaypoints[name]           -- ← was PathCache[name]
+				local wps = PathWaypoints[name]
 				if wps and #wps > 1 then
-					local pCol   = Config.pathwaycolor
-					local pThick = math.max(1, Config.pathwaythickness)
+					local pCol   = obj.data.pathcolor
+					local pThick = math.max(1, obj.data.paththickness)
 
 					for i = 1, #wps - 1 do
 						local x1, y1 = project(wps[i],     localPos, yaw, scale, halfW, halfH)
@@ -8586,7 +8636,7 @@ function Library:AddRadar(initialConfig)
 		hidePathFrom(pathIdx + 1)
 	end
 
-	-- Scroll-wheel zoom (only triggers when cursor is inside the radar frame)
+	-- Scroll-wheel zoom
 	table.insert(System.Connections, UIS.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 		if not Config.isinteractivewithscrollwheel then return end
@@ -8606,7 +8656,6 @@ function Library:AddRadar(initialConfig)
 	-- ── Public API ───────────────────────────────────────────────────────────
 	local API = {}
 
-	-- Update config. Shallow merge: only known keys are accepted.
 	function API:SetConfig(t)
 		assert(type(t) == "table", "[Radar:SetConfig] expects a table")
 		for k, v in pairs(t) do
@@ -8614,20 +8663,18 @@ function Library:AddRadar(initialConfig)
 		end
 	end
 
-	-- Returns a deep copy of the current configuration.
 	function API:GetConfig()
 		return deepCopy(Config)
 	end
 
-	-- Toggle: hard-sets `enabled` and immediately shows/hides the frame.
 	function API:Toggle(bool)
 		Config.enabled = bool
 		Main.Visible   = bool
 	end
 
-	-- Add a new named dot.
-	-- data: { position, color, dotsize, title, font, titlesize }
-	-- position accepts Vector2 (XZ) or Vector3.
+	-- Add a dot.
+	-- data: { position, color, dotsize, title, font, titlesize,
+	--         renderpath, pathcolor, paththickness }
 	function API:Add(name, data)
 		assert(type(name) == "string", "[Radar:Add] name must be a string")
 		assert(type(data) == "table",  "[Radar:Add] data must be a table")
@@ -8636,10 +8683,17 @@ function Library:AddRadar(initialConfig)
 			return
 		end
 		Dots[name] = spawnDot(name, data)
+
+		-- Immediately queue an initial path compute if requested
+		if data.renderpath then
+			enqueuePathRequest(name)
+			processQueue()
+		end
 	end
 
-	-- Update one or more fields of an existing dot.
-	-- Only fields present in `data` are changed; omitted fields are untouched.
+	-- Update one or more fields of a dot.
+	-- If position or renderpath changes the path is invalidated and re-queued,
+	-- subject to the 2-second cooldown (bypassed on the very first call after Add).
 	function API:Update(name, data)
 		assert(type(name) == "string", "[Radar:Update] name must be a string")
 		assert(type(data) == "table",  "[Radar:Update] data must be a table")
@@ -8649,54 +8703,63 @@ function Library:AddRadar(initialConfig)
 			return
 		end
 		applyData(obj, data)
-		-- Invalidate cached path so it recomputes from the new position
-		if data.position then
-			PathWaypoints[name] = nil
-			PathPending[name]   = nil
+
+		-- Decide whether to invalidate the cached path
+		local posChanged  = data.position ~= nil
+		local pathToggled = data.renderpath ~= nil
+
+		if posChanged or pathToggled then
+			-- Respect the 2-second cooldown
+			local cd = PathCooldown[name]
+			local canRecompute = not cd or (tick() - cd) >= PATH_COOLDOWN
+
+			if canRecompute then
+				PathWaypoints[name] = nil
+				PathPending[name]   = nil
+				if obj.data.renderpath then
+					enqueuePathRequest(name)
+					processQueue()
+				end
+			end
+			-- If still in cooldown, the old waypoints keep rendering until
+			-- the next frame's requestPath() call picks it back up naturally.
 		end
 	end
 
-	-- Returns true if a dot with this name exists.
 	function API:Exists(name)
 		return Dots[name] ~= nil
 	end
 
-	-- Remove a single named dot.
 	function API:Remove(name)
 		assert(type(name) == "string", "[Radar:Remove] name must be a string")
 		local obj = Dots[name]
 		if obj and obj.Frame then obj.Frame:Destroy() end
-		Dots[name]      = nil
+		Dots[name]          = nil
 		PathWaypoints[name] = nil
 		PathPending[name]   = nil
+		PathCooldown[name]  = nil
+		PathQueueSet[name]  = nil
+		for i, n in ipairs(PathQueue) do
+			if n == name then table.remove(PathQueue, i); break end
+		end
 	end
 
-	-- Remove every dot.
 	function API:Clear()
 		for _, obj in pairs(Dots) do
 			if obj and obj.Frame then obj.Frame:Destroy() end
 		end
-		Dots      = {}
+		Dots          = {}
 		PathWaypoints = {}
 		PathPending   = {}
+		PathCooldown  = {}
+		PathQueue     = {}
+		PathQueueSet  = {}
 	end
 
-	-- Returns the radar's main Frame instance.
-	function API:GetRadarFrame()
-		return Main
-	end
+	function API:GetRadarFrame() return Main end
+	function API:GetName() return TitleLabel.Text end
+	function API:SetName(text) TitleLabel.Text = tostring(text) end
 
-	-- Returns the current text of the title label.
-	function API:GetName()
-		return TitleLabel.Text
-	end
-
-	-- Sets the title label text.
-	function API:SetName(text)
-		TitleLabel.Text = tostring(text)
-	end
-
-	-- Disconnect everything, destroy all frames, clean all state.
 	function API:Destroy()
 		for _, conn in ipairs(System.Connections) do conn:Disconnect() end
 		System.Connections = {}
