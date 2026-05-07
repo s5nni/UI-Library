@@ -7936,9 +7936,11 @@ function Library:AddRadar(initialConfig)
 	local PFS        = game:GetService("PathfindingService")
 	local LP         = Players.LocalPlayer
 
-	-- ── Default config ───────────────────────────────────────────────────────
+	-- ── Config ───────────────────────────────────────────────────────────────
 	local Config = {
 		enabled                    = true,
+		-- true  → clamp dot positions to radar edge (dots "stick" at the border)
+		-- false → dots drift off-screen; CanvasGroup clips them invisibly
 		clipsdescendants           = true,
 		zoom                       = 100,
 		size                       = 200,
@@ -7974,7 +7976,7 @@ function Library:AddRadar(initialConfig)
 		end
 	end
 
-	-- ── Helpers ──────────────────────────────────────────────────────────────
+	-- ── Helpers ───────────────────────────────────────────────────────────────
 	local function deepCopy(t)
 		if type(t) ~= "table" then return t end
 		local c = {}
@@ -7989,19 +7991,24 @@ function Library:AddRadar(initialConfig)
 		return pos
 	end
 
+	-- Returns absolute pixel position WITHIN the container (0,0 = top-left).
+	-- Centre of the radar is at (halfW, halfH).
 	local function project(worldPos, localPos, yaw, scale, halfW, halfH)
 		local rel     = worldPos - localPos
 		local rotated = CFrame.Angles(0, -yaw, 0) * rel
-		return halfW + rotated.X * scale, halfH + rotated.Z * scale
+		return halfW + rotated.X * scale,
+		halfH + rotated.Z * scale
 	end
 
-	-- PATCH: ground‑corrects a position (prevents pathfinding into the sky/void)
-	local function getGroundPosition(pos)
-		local ray = WS:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -200, 0))
-		return ray and ray.Position or pos
+	local function pathsMatch(a, b)
+		if not a or not b or #a ~= #b then return false end
+		for i = 1, #a do
+			if (a[i] - b[i]).Magnitude > 1 then return false end
+		end
+		return true
 	end
 
-	-- ── UI ───────────────────────────────────────────────────────────────────
+	-- ── Chrome ───────────────────────────────────────────────────────────────
 	local Main = SelfModules.UI.Create("Frame", {
 		Name             = "VoidRadar",
 		BackgroundColor3 = Library.Theme.TopbarColor,
@@ -8046,26 +8053,35 @@ function Library:AddRadar(initialConfig)
 		Size             = UDim2.new(1, 0, 0, 1),
 	}).Parent = Main
 
+	-- Canvas area
 	local Holder = SelfModules.UI.Create("Frame", {
 		Name             = "Holder",
 		BackgroundColor3 = Library.Theme.BackgroundColor,
 		BorderSizePixel  = 0,
-		ClipsDescendants = Config.clipsdescendants,
+		ClipsDescendants = false,
 		Position         = UDim2.new(0, 5, 0, 30),
 		Size             = UDim2.new(1, -10, 1, -35),
 	}, UDim.new(0, 5))
 	Holder.Parent = Main
-	
-	local DotContainer = SelfModules.UI.Create("CanvasGroup", {
-		Name                   = "Dots",
+
+	-- ┌─────────────────────────────────────────────────────────────────────┐
+	-- │  DotContainer (CanvasGroup)                                         │
+	-- │  ── THE SINGLE clip boundary for everything on the radar.          │
+	-- │     Grid, Surroundings, Path lines, and Dots are ALL parented here  │
+	-- │     so the UICorner rounds + clips every layer in one pass.         │
+	-- └─────────────────────────────────────────────────────────────────────┘
+	local Canvas = SelfModules.UI.Create("CanvasGroup", {
+		Name                   = "Canvas",
 		BackgroundTransparency = 1,
 		BorderSizePixel        = 0,
 		Size                   = UDim2.new(1, 0, 1, 0),
 		GroupTransparency      = 0,
-		ZIndex                 = 4,
+		ZIndex                 = 1,
 	}, UDim.new(0, 5))
-	DotContainer.Parent = Holder
+	Canvas.Parent = Holder
 
+	-- Grid — ZIndex 1 (back)
+	-- 1.5× oversized + AnchorPoint(0.5,0.5) so rotation never shows empty corners
 	local GridContainer = SelfModules.UI.Create("Frame", {
 		Name                   = "Grid",
 		BackgroundTransparency = 1,
@@ -8074,28 +8090,34 @@ function Library:AddRadar(initialConfig)
 		Size                   = UDim2.new(1.5, 0, 1.5, 0),
 		ZIndex                 = 1,
 	})
-	GridContainer.Parent = DotContainer
+	GridContainer.Parent = Canvas
 
+	-- Surroundings dots — ZIndex 2
 	local SurrContainer = Instance.new("Frame")
 	SurrContainer.Name               = "Surroundings"
 	SurrContainer.BackgroundTransparency = 1
+	SurrContainer.BorderSizePixel    = 0
 	SurrContainer.Size               = UDim2.new(1, 0, 1, 0)
 	SurrContainer.ZIndex             = 2
-	SurrContainer.Parent             = DotContainer
+	SurrContainer.Parent             = Canvas
 
+	-- Path lines — ZIndex 3
 	local PathContainer = Instance.new("Frame")
 	PathContainer.Name               = "Pathway"
 	PathContainer.BackgroundTransparency = 1
+	PathContainer.BorderSizePixel    = 0
 	PathContainer.Size               = UDim2.new(1, 0, 1, 0)
 	PathContainer.ZIndex             = 3
-	PathContainer.Parent             = DotContainer
+	PathContainer.Parent             = Canvas
+
+	-- Dot anchor frames are parented to Canvas at ZIndex 4+ (see spawnDot)
 
 	if Config.isdraggable then
 		SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
 	end
 	Main.Parent = ScreenGui
 
-	-- ── Grid builder ─────────────────────────────────────────────────────────
+	-- ── Grid builder ──────────────────────────────────────────────────────────
 	local _gs = {}
 
 	local function buildGrid()
@@ -8111,11 +8133,11 @@ function Library:AddRadar(initialConfig)
 
 		local approxPx = Config.size * 1.5
 		local sp       = math.max(Config.gridspacing, 1)
-		local count    = math.ceil(approxPx / sp) + 1
+		local n        = math.ceil(approxPx / sp) + 1
 		local t        = math.max(Config.gridthickness, 1)
 		local col      = Config.gridcolor
 
-		for i = 0, count do
+		for i = 0, n do
 			local pct = (i * sp) / approxPx
 			if pct > 1 then break end
 
@@ -8137,7 +8159,7 @@ function Library:AddRadar(initialConfig)
 
 	buildGrid()
 
-	-- ── Frame pools ──────────────────────────────────────────────────────────
+	-- ── Frame pools ────────────────────────────────────────────────────────────
 	local surrPool = {}
 	local pathPool = {}
 
@@ -8180,116 +8202,43 @@ function Library:AddRadar(initialConfig)
 		end
 	end
 
-	-- ── Raycast params ───────────────────────────────────────────────────────
+	-- ── Raycast params ─────────────────────────────────────────────────────────
 	local surrParams = RaycastParams.new()
 	surrParams.FilterType = Enum.RaycastFilterType.Exclude
 
 	local wallParams = RaycastParams.new()
 	wallParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	-- ── Storage ──────────────────────────────────────────────────────────────
-	local Dots = {}
-	local PathCache     = {}
-	local PathQueue     = {}
-	local PathBusy      = false
-	local PathCooldowns = {}
+	-- ── Path segment validation ────────────────────────────────────────────────
+	-- Called once per path computation (inside task.spawn), never per-frame.
+	-- Returns a boolean array: true = safe to draw, false = crosses a fake wall.
+	local function validateSegments(wps, charFilter)
+		local valid  = {}
+		local params = RaycastParams.new()
+		params.FilterType                  = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances  = charFilter
 
-	-- PATCH: helper to avoid duplicate entries in the queue
-	local function isQueued(name)
-		for _, n in ipairs(PathQueue) do
-			if n == name then return true end
-		end
-		return false
-	end
+		for i = 1, #wps - 1 do
+			local from    = wps[i]
+			local to      = wps[i + 1]
+			local lift    = Vector3.new(0, 1.5, 0)
+			local result  = WS:Raycast(from + lift, (to - from), params)
 
-	-- PATCH: improved enqueuePath with ground‑corrected, auto‑refresh support
-	local processQueue
-	local enqueuePath
-
-	processQueue = function()
-		if PathBusy or #PathQueue == 0 then return end
-
-		PathBusy    = true
-		local name  = table.remove(PathQueue, 1)
-		local obj   = Dots[name]
-
-		if not obj or not obj.data.renderpath then
-			PathBusy = false
-			processQueue()
-			return
-		end
-
-		local root   = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-		local rawPos = obj.data.position
-		if not root or not rawPos then
-			PathBusy = false
-			processQueue()
-			return
-		end
-
-		local localPos = root.Position
-		local worldPos = toVec3(rawPos, localPos.Y)
-
-		-- PATCH: full error‑safe path computation with ground snapping
-		task.spawn(function()
-			local success, err = pcall(function()
-				local path = PFS:CreatePath({
-					AgentRadius   = 2,
-					AgentHeight   = 5,
-					AgentCanJump  = true,
-					AgentMaxSlope = 45,
-				})
-
-				local groundedTarget = getGroundPosition(worldPos)
-				local groundedStart  = getGroundPosition(localPos)
-
-				path:ComputeAsync(groundedStart, groundedTarget)
-
-				if path.Status == Enum.PathStatus.Success then
-					local wps = {}
-					for _, wp in ipairs(path:GetWaypoints()) do
-						table.insert(wps, wp.Position)
-					end
-					PathCache[name] = { wps = wps }
-				else
-					warn("[Radar] Path failed:", path.Status, name)
-				end
-			end)
-
-			if not success then
-				warn("[Radar] Pathfinding crash:", err)
+			if not result then
+				valid[i] = true
+			elseif result.Instance:IsA("BasePart") and not result.Instance.CanCollide then
+				-- CanCollide=false part → "fake wall" that pathfinder ignores visually
+				valid[i] = false
+			else
+				valid[i] = true
 			end
-
-			PathBusy = false
-			processQueue()
-		end)
-	end
-
-	-- PATCH: enqueuePath now uses isQueued and respects live cooldown
-	enqueuePath = function(name)
-		if isQueued(name) then return end
-
-		local now  = tick()
-		local last = PathCooldowns[name] or 0
-		local cd   = Config.pathfindcooldown   -- live‑editable
-
-		if now - last < cd then
-			local remaining = cd - (now - last) + 0.02
-			task.delay(remaining, function()
-				local obj = Dots[name]
-				if obj and obj.data.renderpath then
-					enqueuePath(name)
-				end
-			end)
-			return
 		end
-
-		PathCooldowns[name] = now
-		table.insert(PathQueue, name)
-		processQueue()
+		return valid
 	end
 
-	-- ── Dot factory ──────────────────────────────────────────────────────────
+	-- ── Dot storage ────────────────────────────────────────────────────────────
+	local Dots = {}
+
 	local function spawnDot(name, data)
 		local ds     = data.dotsize       or 5
 		local color  = data.color         or Color3.fromRGB(255, 255, 255)
@@ -8300,14 +8249,21 @@ function Library:AddRadar(initialConfig)
 		local pcol   = data.pathcolor     or Color3.fromRGB(255, 220, 80)
 		local pthick = data.paththickness or 1
 
+		-- ── Anchor (0×0) ─────────────────────────────────────────────────────
+		-- Purely a position marker inside Canvas.
+		-- project() returns absolute px coords within Canvas, so we set the
+		-- anchor's Position directly — no extra halfW/halfH offset needed here.
 		local anchor = Instance.new("Frame")
 		anchor.Name                   = name
 		anchor.BackgroundTransparency = 1
 		anchor.BorderSizePixel        = 0
 		anchor.Size                   = UDim2.new(0, 0, 0, 0)
-		anchor.ZIndex                 = 5
-		anchor.Parent                 = DotContainer
+		anchor.ZIndex                 = 4
+		anchor.Parent                 = Canvas   -- inside the CanvasGroup
 
+		-- ── Dot ──────────────────────────────────────────────────────────────
+		-- AnchorPoint(0.5,0.5) + Position(0,0,0,0) centres the dot on the
+		-- anchor's pixel position regardless of dotsize.
 		local dot = Instance.new("Frame")
 		dot.Name             = "Dot"
 		dot.AnchorPoint      = Vector2.new(0.5, 0.5)
@@ -8315,10 +8271,11 @@ function Library:AddRadar(initialConfig)
 		dot.Size             = UDim2.new(0, ds, 0, ds)
 		dot.BackgroundColor3 = color
 		dot.BorderSizePixel  = 0
-		dot.ZIndex           = 6
+		dot.ZIndex           = 5
 		dot.Parent           = anchor
 		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
+		-- ── Label ────────────────────────────────────────────────────────────
 		local lbl = Instance.new("TextLabel")
 		lbl.Name                   = "Title"
 		lbl.AnchorPoint            = Vector2.new(0.5, 0)
@@ -8331,7 +8288,7 @@ function Library:AddRadar(initialConfig)
 		lbl.Font                   = font
 		lbl.TextXAlignment         = Enum.TextXAlignment.Center
 		lbl.Visible                = type(title) == "string" and title ~= ""
-		lbl.ZIndex                 = 7
+		lbl.ZIndex                 = 6
 		lbl.Parent                 = anchor
 
 		local stroke = Instance.new("UIStroke")
@@ -8341,25 +8298,27 @@ function Library:AddRadar(initialConfig)
 
 		return {
 			data = {
-				position     = data.position,
-				color        = color,
-				dotsize      = ds,
-				title        = title,
-				font         = font,
-				titlesize    = ts,
-				renderpath   = rpath,
-				pathcolor    = pcol,
+				position      = data.position,
+				color         = color,
+				dotsize       = ds,
+				title         = title,
+				font          = font,
+				titlesize     = ts,
+				renderpath    = rpath,
+				pathcolor     = pcol,
 				paththickness = pthick,
 			},
-			Frame = anchor,
-			Dot   = dot,
-			Label = lbl,
+			Frame      = anchor,
+			Dot        = dot,
+			Label      = lbl,
+			_pathCache = nil,   -- { wps={}, valid={} } — kept until replaced
+			_pathTimer = 0,     -- 0 forces first compute immediately
+			_pathBusy  = false,
 		}
 	end
 
 	local function applyData(obj, data)
-		local oldPos = obj.data.position
-		local posChanged = data.position ~= nil and data.position ~= oldPos
+		local posChanged = data.position ~= nil and data.position ~= obj.data.position
 
 		if data.position      ~= nil then obj.data.position      = data.position      end
 		if data.color         ~= nil then obj.data.color         = data.color         end
@@ -8389,59 +8348,74 @@ function Library:AddRadar(initialConfig)
 		return posChanged
 	end
 
-	-- ── Surroundings helper ───────────────────────────────────────────────────
-	local function castSurroundings(workItems, localPos, yaw, scale, halfW, halfH, maxHits)
-		local surrIdx = 0
-		local wi      = 1
+	-- ── Per-dot path scheduler ─────────────────────────────────────────────────
+	-- Each dot is fully independent — no shared queue.
+	-- pathfindcooldown is read live from Config so any SetConfig() change takes
+	-- effect on the very next scheduling check.
+	local function schedulePath(obj, name, localPos, worldPos)
+		if obj._pathBusy then return end
+		if tick() - obj._pathTimer < Config.pathfindcooldown then return end
 
-		while wi <= #workItems and surrIdx < maxHits do
-			local item = workItems[wi]
-			wi += 1
+		obj._pathBusy  = true
+		obj._pathTimer = tick()
 
-			local hit = WS:Raycast(item.pos, item.dir * Config.maxdistance, surrParams)
-			if not hit then continue end
+		local snapPos   = worldPos
+		local snapLocal = localPos
 
-			local inst   = hit.Instance
-			local isTerr = inst:IsA("Terrain")
-
-			if Config.ignoreterrain and isTerr then continue end
-			if Config.ignorenoncollidable and not isTerr and inst:IsA("BasePart") and not inst.CanCollide then
-				continue
-			end
-			if not isTerr then
-				local hasHuman = false
-				local anc = inst.Parent
-				while anc and anc ~= WS do
-					if anc:FindFirstChildOfClass("Humanoid") then hasHuman = true; break end
-					anc = anc.Parent
-				end
-				if hasHuman then continue end
-			end
-
-			local rx, ry = project(hit.Position, localPos, yaw, scale, halfW, halfH)
-			surrIdx += 1
-			local d = getSurrDot(surrIdx)
-			d.BackgroundColor3 = Config.rendercolor
-			d.Size             = UDim2.new(0, math.max(1, Config.rendersize), 0, math.max(1, Config.rendersize))
-			d.Position         = UDim2.new(0, rx, 0, ry)
-			d.Visible          = true
-
-			if Config.reflectionalrender and item.bouncesLeft > 0 then
-				local normal  = hit.Normal
-				local reflDir = (item.dir - 2 * item.dir:Dot(normal) * normal).Unit
-				table.insert(workItems, {
-					pos         = hit.Position + normal * 0.05,
-					dir         = reflDir,
-					bouncesLeft = item.bouncesLeft - 1,
-				})
-			end
+		local charFilter = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then table.insert(charFilter, p.Character) end
 		end
 
-		return surrIdx
+		task.spawn(function()
+			-- Guard: dot removed while we waited
+			if Dots[name] ~= obj then obj._pathBusy = false; return end
+
+			local path = PFS:CreatePath({
+				AgentRadius   = 2,
+				AgentHeight   = 5,
+				AgentCanJump  = true,
+				AgentMaxSlope = 45,
+			})
+
+			local ok = pcall(path.ComputeAsync, path, snapLocal, snapPos)
+
+			-- After the yield, verify dot still exists and position hasn't drifted
+			if Dots[name] ~= obj then obj._pathBusy = false; return end
+
+			local curRaw = obj.data.position
+			if curRaw then
+				local curWorld = toVec3(curRaw, snapLocal.Y)
+				if (curWorld - snapPos).Magnitude > 3 then
+					-- Stale result — position changed during compute
+					obj._pathBusy = false
+					return
+				end
+			end
+
+			if ok and path.Status == Enum.PathStatus.Success then
+				local newWps = {}
+				for _, wp in ipairs(path:GetWaypoints()) do
+					table.insert(newWps, wp.Position)
+				end
+
+				local old = obj._pathCache
+				if not pathsMatch(old and old.wps, newWps) then
+					-- New path differs from cache → validate and replace atomically.
+					-- Old cache stays visible until this assignment.
+					local valid = validateSegments(newWps, charFilter)
+					obj._pathCache = { wps = newWps, valid = valid }
+				end
+				-- If paths match, keep old cache unchanged (no flicker, no work)
+			end
+			-- On failure, old cache is kept intact
+
+			obj._pathBusy = false
+		end)
 	end
 
-	-- ── Core update ──────────────────────────────────────────────────────────
-	local System  = { Connections = {} }
+	-- ── Core update ─────────────────────────────────────────────────────────────
+	local System   = { Connections = {} }
 	local lastSize = Config.size
 
 	local function getCameraYaw()
@@ -8457,15 +8431,16 @@ function Library:AddRadar(initialConfig)
 		local lp = charCF.Position
 		local td = Vector3.new(targetPos.X - lp.X, 0, targetPos.Z - lp.Z)
 		if td.Magnitude < 1e-4 then return true end
-		return math.deg(math.acos(math.clamp(fwd:Dot(td.Unit), -1, 1))) <= Config.radarfieldofview / 2
+		return math.deg(math.acos(math.clamp(fwd:Dot(td.Unit), -1, 1)))
+			<= Config.radarfieldofview / 2
 	end
 
 	local function occludedByWall(fromPos, toPos)
-		local filter = {}
+		local f = {}
 		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character then table.insert(filter, p.Character) end
+			if p.Character then table.insert(f, p.Character) end
 		end
-		wallParams.FilterDescendantsInstances = filter
+		wallParams.FilterDescendantsInstances = f
 		return WS:Raycast(fromPos, toPos - fromPos, wallParams) ~= nil
 	end
 
@@ -8480,26 +8455,30 @@ function Library:AddRadar(initialConfig)
 		local localPos = root.Position
 		local charCF   = root.CFrame
 		local yaw      = getCameraYaw()
-		local halfW    = Holder.AbsoluteSize.X / 2
-		local halfH    = Holder.AbsoluteSize.Y / 2
+
+		-- halfW/halfH are the centre of the Canvas in pixels
+		local halfW = Canvas.AbsoluteSize.X / 2
+		local halfH = Canvas.AbsoluteSize.Y / 2
 		if halfW <= 0 or halfH <= 0 then return end
+
 		local scale = math.min(halfW, halfH) / math.max(Config.zoom, 1)
 
+		-- Live resize
 		if Config.size ~= lastSize then
 			lastSize  = Config.size
 			Main.Size = UDim2.new(0, Config.size + 10, 0, Config.size + 40)
 		end
 
-		Holder.ClipsDescendants = Config.clipsdescendants
-
-		if Config.grid        ~= _gs.enabled
-			or Config.gridspacing  ~= _gs.spacing
+		-- Grid dirty-rebuild
+		if Config.grid         ~= _gs.enabled
+			or Config.gridspacing   ~= _gs.spacing
 			or Config.gridthickness ~= _gs.thickness
-			or Config.gridcolor    ~= _gs.color
-			or Config.size         ~= _gs.size then
+			or Config.gridcolor     ~= _gs.color
+			or Config.size          ~= _gs.size then
 			buildGrid()
 		end
 
+		-- Grid rotation & static world-offset
 		if Config.grid then
 			GridContainer.Rotation = Config.gridrotate and math.deg(yaw) or 0
 
@@ -8526,47 +8505,93 @@ function Library:AddRadar(initialConfig)
 			local maxHits     = math.max(1, Config.maxrenderhits)
 			local initBounces = Config.reflectionalrender
 				and math.max(0, Config.reflectionalbounces) or 0
+			local MAX_WORK    = maxHits * 4
 
-			local workItems = {}
+			local work = {}
 
 			for i = 0, RAY_COUNT - 1 do
-				local angle = (i / RAY_COUNT) * math.pi * 2
-				table.insert(workItems, {
+				local a = (i / RAY_COUNT) * math.pi * 2
+				table.insert(work, {
 					pos         = localPos,
-					dir         = Vector3.new(math.sin(angle), 0, math.cos(angle)),
+					dir         = Vector3.new(math.sin(a), 0, math.cos(a)),
 					bouncesLeft = initBounces,
 				})
 			end
 
 			if Config.reflectivedots then
-				local RAYS_PER_DOT = 24
+				local RAYS_PER_DOT = 12
 				for _, obj in pairs(Dots) do
-					if #workItems >= maxHits * 4 then break end
-					local rawPos = obj.data.position
-					if not rawPos then continue end
-					local wp = toVec3(rawPos, localPos.Y)
+					if #work >= MAX_WORK then break end
+					local rp = obj.data.position
+					if not rp then continue end
+					local wp = toVec3(rp, localPos.Y)
 					for i = 0, RAYS_PER_DOT - 1 do
-						local angle = (i / RAYS_PER_DOT) * math.pi * 2
-						table.insert(workItems, {
+						local a = (i / RAYS_PER_DOT) * math.pi * 2
+						table.insert(work, {
 							pos         = wp,
-							dir         = Vector3.new(math.sin(angle), 0, math.cos(angle)),
+							dir         = Vector3.new(math.sin(a), 0, math.cos(a)),
 							bouncesLeft = initBounces,
 						})
 					end
 				end
 			end
 
-			surrIdx = castSurroundings(workItems, localPos, yaw, scale, halfW, halfH, maxHits)
+			local wi      = 1
+			local rSz     = math.max(1, Config.rendersize)
+			local rCol    = Config.rendercolor
+			local rayDist = Config.maxdistance
+
+			while wi <= #work and surrIdx < maxHits and wi <= MAX_WORK do
+				local item = work[wi]; wi += 1
+
+				local hit = WS:Raycast(item.pos, item.dir * rayDist, surrParams)
+				if not hit then continue end
+
+				local inst   = hit.Instance
+				local isTerr = inst:IsA("Terrain")
+
+				if Config.ignoreterrain and isTerr then continue end
+				if Config.ignorenoncollidable and not isTerr
+					and inst:IsA("BasePart") and not inst.CanCollide then continue end
+
+				if not isTerr then
+					local skip = false
+					local anc  = inst.Parent
+					while anc and anc ~= WS do
+						if anc:FindFirstChildOfClass("Humanoid") then skip = true; break end
+						anc = anc.Parent
+					end
+					if skip then continue end
+				end
+
+				-- project() → absolute pixel coords within Canvas
+				local rx, ry = project(hit.Position, localPos, yaw, scale, halfW, halfH)
+				surrIdx += 1
+				local d = getSurrDot(surrIdx)
+				d.BackgroundColor3 = rCol
+				d.Size             = UDim2.new(0, rSz, 0, rSz)
+				d.Position         = UDim2.new(0, rx, 0, ry)
+				d.Visible          = true
+
+				if Config.reflectionalrender and item.bouncesLeft > 0 and #work < MAX_WORK then
+					local n       = hit.Normal
+					local rDir    = (item.dir - 2 * item.dir:Dot(n) * n).Unit
+					table.insert(work, {
+						pos         = hit.Position + n * 0.05,
+						dir         = rDir,
+						bouncesLeft = item.bouncesLeft - 1,
+					})
+				end
+			end
 		end
 		hideSurrFrom(surrIdx + 1)
 
-		-- ── Dots & path lines ────────────────────────────────────────────────
+		-- ── Dots ─────────────────────────────────────────────────────────────
 		local pathIdx = 0
 
 		for name, obj in pairs(Dots) do
 			if not obj.Frame or not obj.Frame.Parent then
-				Dots[name] = nil
-				continue
+				Dots[name] = nil; continue
 			end
 
 			local rawPos = obj.data.position
@@ -8587,10 +8612,24 @@ function Library:AddRadar(initialConfig)
 				obj.Frame.Visible = false; continue
 			end
 
+			-- project() returns absolute pixel position within Canvas
+			-- (halfW + rotated.X*scale, halfH + rotated.Z*scale)
 			local rx, ry = project(worldPos, localPos, yaw, scale, halfW, halfH)
+
+			-- clipsdescendants=true → clamp so dots stay within the radar square
+			-- clipsdescendants=false → let them drift; CanvasGroup clips visually
+			if Config.clipsdescendants then
+				local pad = obj.data.dotsize * 0.5
+				rx = math.clamp(rx, pad,             halfW * 2 - pad)
+				ry = math.clamp(ry, pad,             halfH * 2 - pad)
+			end
+
+			-- Set anchor position directly — no extra halfW/halfH needed because
+			-- project() already incorporates halfW/halfH into its return value
 			obj.Frame.Position = UDim2.new(0, rx, 0, ry)
 			obj.Frame.Visible  = true
 
+			-- Refresh visuals live each frame so Edit() changes apply instantly
 			local ds    = obj.data.dotsize
 			local color = obj.data.color
 			obj.Dot.Size             = UDim2.new(0, ds, 0, ds)
@@ -8598,6 +8637,7 @@ function Library:AddRadar(initialConfig)
 			obj.Label.Position       = UDim2.new(0, 0, 0, ds / 2 + 2)
 			obj.Label.TextColor3     = color
 
+			-- Distance fade
 			local alpha = 1
 			if Config.fadeondistance then
 				local fs = math.min(Config.distancetofade, Config.maxdistance)
@@ -8608,37 +8648,40 @@ function Library:AddRadar(initialConfig)
 			end
 			obj.Dot.BackgroundTransparency  = 1 - alpha
 			obj.Label.TextTransparency      = 1 - alpha
-			local stroke = obj.Label:FindFirstChildOfClass("UIStroke")
-			if stroke then stroke.Transparency = 1 - alpha end
+			local st = obj.Label:FindFirstChildOfClass("UIStroke")
+			if st then st.Transparency = 1 - alpha end
 
-			-- Render path
+			-- Path scheduling (per-dot, independent)
 			if obj.data.renderpath then
-				local cache = PathCache[name]
-				if cache and #cache.wps > 1 then
-					local pCol   = obj.data.pathcolor
-					local pThick = math.max(1, obj.data.paththickness)
+				schedulePath(obj, name, localPos, worldPos)
+			end
 
-					for i = 1, #cache.wps - 1 do
-						local x1, y1 = project(cache.wps[i],     localPos, yaw, scale, halfW, halfH)
-						local x2, y2 = project(cache.wps[i + 1], localPos, yaw, scale, halfW, halfH)
-						local dx, dy = x2 - x1, y2 - y1
-						local len    = math.sqrt(dx * dx + dy * dy)
-						if len > 0.5 then
-							pathIdx += 1
-							local line = getPathLine(pathIdx)
-							line.BackgroundColor3 = pCol
-							line.Size             = UDim2.new(0, len, 0, pThick)
-							line.Position         = UDim2.new(0, (x1 + x2) * 0.5, 0, (y1 + y2) * 0.5)
-							line.Rotation         = math.deg(math.atan2(dy, dx))
-							line.Visible          = true
-						end
+			-- Path rendering
+			-- _pathCache is only ever replaced when a new compute finishes →
+			-- old lines stay on screen during recomputation → zero flicker
+			if obj.data.renderpath and obj._pathCache then
+				local wps    = obj._pathCache.wps
+				local valid  = obj._pathCache.valid
+				local pCol   = obj.data.pathcolor
+				local pThick = math.max(1, obj.data.paththickness)
+
+				for i = 1, #wps - 1 do
+					if not valid[i] then continue end  -- skip fake-wall crossings
+
+					local x1, y1 = project(wps[i],     localPos, yaw, scale, halfW, halfH)
+					local x2, y2 = project(wps[i + 1], localPos, yaw, scale, halfW, halfH)
+					local dx, dy  = x2 - x1, y2 - y1
+					local len     = math.sqrt(dx * dx + dy * dy)
+
+					if len > 0.5 then
+						pathIdx += 1
+						local line = getPathLine(pathIdx)
+						line.BackgroundColor3 = pCol
+						line.Size             = UDim2.new(0, len, 0, pThick)
+						line.Position         = UDim2.new(0, (x1+x2)*0.5, 0, (y1+y2)*0.5)
+						line.Rotation         = math.deg(math.atan2(dy, dx))
+						line.Visible          = true
 					end
-				end
-
-				-- PATCH: auto‑refresh path for moving targets
-				local last = PathCooldowns[name] or 0
-				if tick() - last >= Config.pathfindcooldown then
-					enqueuePath(name)
 				end
 			end
 		end
@@ -8646,7 +8689,6 @@ function Library:AddRadar(initialConfig)
 		hidePathFrom(pathIdx + 1)
 	end
 
-	-- Scroll-wheel zoom
 	table.insert(System.Connections, UIS.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 		if not Config.isinteractivewithscrollwheel then return end
@@ -8663,7 +8705,7 @@ function Library:AddRadar(initialConfig)
 		System:Update()
 	end))
 
-	-- ── Public API ───────────────────────────────────────────────────────────
+	-- ── Public API ──────────────────────────────────────────────────────────────
 	local API = {}
 
 	function API:SetConfig(t)
@@ -8682,6 +8724,9 @@ function Library:AddRadar(initialConfig)
 		Main.Visible   = bool
 	end
 
+	-- Add a named dot.
+	-- data: position (Vector3|Vector2), color, dotsize, title, font, titlesize,
+	--       renderpath, pathcolor, paththickness
 	function API:Add(name, data)
 		assert(type(name) == "string", "[Radar:Add] name must be a string")
 		assert(type(data) == "table",  "[Radar:Add] data must be a table")
@@ -8689,11 +8734,7 @@ function Library:AddRadar(initialConfig)
 			warn("[Radar:Add] '" .. name .. "' already exists — use :Edit() to change it")
 			return
 		end
-		local obj = spawnDot(name, data)
-		Dots[name] = obj
-		if obj.data.renderpath then
-			enqueuePath(name)
-		end
+		Dots[name] = spawnDot(name, data)
 	end
 
 	local function _edit(name, data)
@@ -8704,10 +8745,10 @@ function Library:AddRadar(initialConfig)
 			warn("[Radar:Edit] '" .. name .. "' does not exist — use :Add() first")
 			return
 		end
-
 		local posChanged = applyData(obj, data)
-		if obj.data.renderpath and (posChanged or data.renderpath == true) then
-			enqueuePath(name)
+		-- Reset path timer so the next update schedules a fresh compute
+		if posChanged or data.renderpath == true then
+			obj._pathTimer = 0
 		end
 	end
 
@@ -8722,22 +8763,14 @@ function Library:AddRadar(initialConfig)
 		assert(type(name) == "string", "[Radar:Remove] name must be a string")
 		local obj = Dots[name]
 		if obj and obj.Frame then obj.Frame:Destroy() end
-		Dots[name]          = nil
-		PathCache[name]     = nil
-		PathCooldowns[name] = nil
-		for i = #PathQueue, 1, -1 do
-			if PathQueue[i] == name then table.remove(PathQueue, i) end
-		end
+		Dots[name] = nil
 	end
 
 	function API:Clear()
 		for _, obj in pairs(Dots) do
 			if obj and obj.Frame then obj.Frame:Destroy() end
 		end
-		Dots          = {}
-		PathCache     = {}
-		PathCooldowns = {}
-		PathQueue     = {}
+		Dots = {}
 	end
 
 	function API:GetRadarFrame() return Main end
@@ -8745,7 +8778,7 @@ function Library:AddRadar(initialConfig)
 	function API:SetName(text)    TitleLabel.Text = tostring(text) end
 
 	function API:Destroy()
-		for _, conn in ipairs(System.Connections) do conn:Disconnect() end
+		for _, c in ipairs(System.Connections) do c:Disconnect() end
 		System.Connections = {}
 		pcall(function() SelfModules.UI.UnMakeDraggable(TitleBar) end)
 		self:Clear()
