@@ -7931,7 +7931,7 @@ end
 -- ==================== RADAR ====================
 -- Paste just before `return Library`.
 
-function Library:AddRadar(initialConfig)
+function Library:AddRadar(radarName, initialConfig)
 	local Players    = game:GetService("Players")
 	local RunService = game:GetService("RunService")
 	local WS         = game:GetService("Workspace")
@@ -7941,73 +7941,61 @@ function Library:AddRadar(initialConfig)
 
 	-- ── Config ─────────────────────────────────────────────────────────────
 	local Config = {
-		-- Core
-		enabled              = true,
-		circular             = false,   -- true = circular canvas, false = rounded-rect
-		clipsdescendants     = true,    -- true = clamp dots to border, false = drift off (clipped by canvas)
-		zoom                 = 100,
-		size                 = 200,
-		maxdistance          = 1000,
-		fadeondistance       = true,
-		distancetofade       = 700,
+		enabled                          = true,
+		radaraccent                      = Library.Theme.Accent,
+		clipsbounds                      = true,
+		clipsboundsoffset                = 5,
+		zoom                             = 100,
+		size                             = 200,
+		maxdistance                      = 1000,
 
-		-- Grid
-		grid                 = true,
-		gridcolor            = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(16,16,16)),
-		gridspacing          = 20,      -- pixel spacing between lines
-		gridthickness        = 1,
-		gridrotate           = true,
-		gridstatic           = false,   -- true = grid scrolls with world position
+		grid                             = true,
+		gridcolor                        = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(16,16,16)),
+		gridspacing                      = 20,
+		gridthickness                    = 1,
+		gridtransparency                 = 0.5,
+		gridrotate                       = true,
+		gridstatic                       = false,
 
-		-- Detection
-		ignorebehindwalls    = false,
-		radarfieldofview     = 360,
+		ignorebehindwalls                = false,
+		radarfieldofview                 = 360,
 
-		-- Surroundings
-		rendersurroundings   = false,
-		ignoreterrain        = true,
-		ignorenoncollidable  = false,
-		rendercolor          = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(30,30,36)),
-		rendersize           = 3,
-		maxrenderhits        = 60,
-		surroundingsinterval = 3,       -- recast every N frames; re-projects every frame
+		rendersurroundings               = false,
+		renderoverridecolorobject        = false,
+		renderoverridecolorobjectterrain = {},
+		ignoreterrain                    = true,
+		ignorenoncollidable              = false,
+		rendercolor                      = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(30,30,36)),
+		rendersize                       = 3,
+		maxrenderhits                    = 60,
+		surroundingsinterval             = 3,
 
-		-- Reflective surroundings
-		reflectionalrender   = false,
-		reflectionalbounces  = 2,
-		reflectivedots       = false,
+		reflectionalrender               = false,
+		reflectionalbounces              = 2,
 
-		-- Pathfinding (renderpath / pathcolor / paththickness are per-dot)
-		pathfindcooldown     = 2,       -- seconds between per-dot path refreshes (live-editable)
-		pathsmooth           = true,    -- Catmull-Rom curve smoothing
-		pathsmoothsteps      = 4,       -- curve sub-divisions per waypoint segment
+		pathfindcooldown                 = 2,
+		pathsmooth                       = true,
+		pathsmoothsteps                  = 4,
+		renderpath                       = true,
 
-		-- Visual extras
-		rings                = false,   -- concentric distance rings
-		ringcount            = 3,
-		ringcolor            = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(50,50,60)),
-		ringdistance         = 300,     -- world units between rings
-		compass              = true,    -- "N" indicator on the border
-		compasscolor         = Color3.fromRGB(255, 80, 80),
-		compassnorth         = Vector3.new(0, 0, -1),   -- world direction represented as "N"
-		edgearrows           = true,    -- show directional arrow when dot is off-screen / clamped
-		heatmap              = false,   -- override dot colours with distance-based green→red gradient
-		showplayerdot        = true,    -- permanent dot for the local player at radar centre
-		playercolor          = Color3.fromRGB(255, 255, 255),
-		playerdotsize        = 7,
+		rings                            = false,
+		ringcount                        = 3,
+		ringcolor                        = SelfModules.UI.Color.Add(Library.Theme.BackgroundColor, Color3.fromRGB(50,50,60)),
+		ringdistance                     = 300,
 
-		-- Zoom
-		smoothzoom           = true,    -- smoothly tween display zoom toward Config.zoom
+		edgearrows                       = true,
+		showplayerdot                    = true,
+		playercolor                      = Color3.fromRGB(255,255,255),
+		playerdotsize                    = 7,
+		playerdotshape                   = "diamond",
 
-		-- Lifecycle
-		staletime            = 0,       -- auto-remove dots after N seconds of no :Edit() (0 = off)
-
-		-- Pan (LMB drag)
-		allowpan             = false,
-
-		-- Interaction
-		isdraggable                  = true,
-		isinteractivewithscrollwheel = true,
+		smoothzoom                       = true,
+		staletime                        = 0,
+		allowpan                         = false,
+		pansmoothness                    = 0.08,
+		isdraggable                      = true,
+		isinteractivewithscrollwheel     = true,
+		glowtransparency                 = 0.5,
 	}
 
 	if type(initialConfig) == "table" then
@@ -8016,7 +8004,7 @@ function Library:AddRadar(initialConfig)
 		end
 	end
 
-	-- ── Pure helpers ───────────────────────────────────────────────────────
+	-- ── Helpers ─────────────────────────────────────────────────────────────
 	local function deepCopy(t)
 		if type(t) ~= "table" then return t end
 		local c = {}
@@ -8025,40 +8013,76 @@ function Library:AddRadar(initialConfig)
 	end
 
 	local function toVec3(pos, refY)
-		if typeof(pos) == "Vector2" then
-			return Vector3.new(pos.X, refY or 0, pos.Y)
-		end
+		if typeof(pos) == "Vector2" then return Vector3.new(pos.X, refY or 0, pos.Y) end
 		return pos
 	end
 
-	-- Returns ABSOLUTE pixel coords within the canvas (0,0 = top-left; centre = halfW,halfH).
 	local function project(worldPos, viewCenter, yaw, scale, halfW, halfH)
 		local rel     = worldPos - viewCenter
 		local rotated = CFrame.Angles(0, -yaw, 0) * rel
-		return halfW + rotated.X * scale,
-		       halfH + rotated.Z * scale
+		return halfW + rotated.X * scale, halfH + rotated.Z * scale
 	end
 
 	local function pathsMatch(a, b)
 		if not a or not b or #a ~= #b then return false end
-		for i = 1, #a do
-			if (a[i] - b[i]).Magnitude > 1 then return false end
-		end
+		for i = 1, #a do if (a[i]-b[i]).Magnitude > 1 then return false end end
 		return true
 	end
 
-	-- Catmull-Rom spline interpolation between p1 and p2
 	local function catmullRom(p0, p1, p2, p3, t)
 		local t2, t3 = t*t, t*t*t
-		return 0.5 * (
-			2*p1 +
-			(-p0 + p2)            * t  +
-			(2*p0 - 5*p1 + 4*p2 - p3) * t2 +
-			(-p0 + 3*p1 - 3*p2 + p3) * t3
-		)
+		return 0.5*(2*p1+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3)
 	end
 
-	-- ── UI construction ────────────────────────────────────────────────────
+	local function getCameraYaw()
+		local _, y = WS.CurrentCamera.CFrame:ToEulerAnglesYXZ()
+		return y
+	end
+
+	local function makeGlow(parent, color)
+		local g = Instance.new("ImageLabel")
+		g.Name = "Glow"; g.Position = UDim2.new(0,-6,0,-6)
+		g.Size = UDim2.new(1,12,1,12); g.BackgroundTransparency = 1
+		g.BorderSizePixel = 0; g.ZIndex = 0
+		g.Image = "rbxassetid://10822615828"
+		g.ImageColor3 = color or Color3.new(1,1,1)
+		g.ImageTransparency = Config.glowtransparency
+		g.ScaleType = Enum.ScaleType.Slice; g.SliceCenter = Rect.new(99,99,99,99)
+		g.Parent = parent; return g
+	end
+
+	-- Effective colour: heat > tag > base
+	local Tags = {}  -- [tagName] = { color=Color3, ... }
+
+	local function resolveColor(marker, flatDist)
+		local c = marker.data.color
+		if marker.data.tag then
+			local t = Tags[marker.data.tag]
+			if t and t.color then c = t.color end
+		end
+		if marker.data.heat then
+			local hsd = marker.data.heatstartdistance or 100
+			local hed = marker.data.heatenddistance   or 5
+			local t   = math.clamp((flatDist - hed) / math.max(hsd - hed, 0.001), 0, 1)
+			c = (marker.data.heatendcolor or Color3.fromRGB(255,0,0)):Lerp(
+			     marker.data.heatstartcolor or Color3.fromRGB(85,255,0), t)
+		end
+		return c
+	end
+
+	local function applyShape(frame, corner, shape)
+		if shape == "square" then
+			frame.Rotation = 0; corner.CornerRadius = UDim.new(0,3)
+		elseif shape == "diamond" then
+			frame.Rotation = 45; corner.CornerRadius = UDim.new(0,2)
+		else  -- circle (default)
+			frame.Rotation = 0; corner.CornerRadius = UDim.new(1,0)
+		end
+	end
+
+	-- ── UI ──────────────────────────────────────────────────────────────────
+	local RadarTitle = tostring(radarName or "RADAR")
+
 	local Main = SelfModules.UI.Create("Frame", {
 		Name             = "VoidRadar",
 		BackgroundColor3 = Library.Theme.TopbarColor,
@@ -8067,27 +8091,28 @@ function Library:AddRadar(initialConfig)
 		Size             = UDim2.new(0, Config.size + 10, 0, Config.size + 40),
 	}, UDim.new(0, 6))
 
-	SelfModules.UI.Create("Frame", {
-		BackgroundColor3 = Library.Theme.Accent,
+	local AccentBar = SelfModules.UI.Create("Frame", {
+		BackgroundColor3 = Config.radaraccent,
 		BorderSizePixel  = 0,
 		Size             = UDim2.new(1, 0, 0, 2),
 		ZIndex           = 12,
-	}, UDim.new(0, 2)).Parent = Main
+	}, UDim.new(0, 2))
+	AccentBar.Parent = Main
 
 	local TitleBar = SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.TopbarColor,
 		BorderSizePixel  = 0,
-		Position         = UDim2.new(0, 0, 0, 2),
-		Size             = UDim2.new(1, 0, 0, 22),
+		Position         = UDim2.new(0,0,0,2),
+		Size             = UDim2.new(1,0,0,22),
 		ZIndex           = 10,
 	})
 	TitleBar.Parent = Main
 
 	local TitleLabel = SelfModules.UI.Create("TextLabel", {
 		BackgroundTransparency = 1,
-		Size                   = UDim2.new(1, -12, 1, 0),
-		Position               = UDim2.new(0, 8, 0, 0),
-		Text                   = "▸  RADAR",
+		Size                   = UDim2.new(1,-12,1,0),
+		Position               = UDim2.new(0,8,0,0),
+		Text                   = "▸  " .. RadarTitle,
 		TextColor3             = Library.Theme.TextColor,
 		TextSize               = 10,
 		Font                   = Enum.Font.GothamBold,
@@ -8099,8 +8124,8 @@ function Library:AddRadar(initialConfig)
 	SelfModules.UI.Create("Frame", {
 		BackgroundColor3 = Library.Theme.BackgroundColor,
 		BorderSizePixel  = 0,
-		Position         = UDim2.new(0, 0, 0, 24),
-		Size             = UDim2.new(1, 0, 0, 1),
+		Position         = UDim2.new(0,0,0,24),
+		Size             = UDim2.new(1,0,0,1),
 	}).Parent = Main
 
 	local Holder = SelfModules.UI.Create("Frame", {
@@ -8108,123 +8133,84 @@ function Library:AddRadar(initialConfig)
 		BackgroundColor3 = Library.Theme.BackgroundColor,
 		BorderSizePixel  = 0,
 		ClipsDescendants = false,
-		Position         = UDim2.new(0, 5, 0, 30),
-		Size             = UDim2.new(1, -10, 1, -35),
-	}, UDim.new(0, 5))
+		Position         = UDim2.new(0,5,0,30),
+		Size             = UDim2.new(1,-10,1,-35),
+	}, UDim.new(0,5))
 	Holder.Parent = Main
 
-	-- CanvasGroup: single clip boundary for every radar layer.
 	local Canvas = SelfModules.UI.Create("CanvasGroup", {
-		Name                   = "Canvas",
+		Name              = "Canvas",
 		BackgroundTransparency = 1,
-		BorderSizePixel        = 0,
-		Size                   = UDim2.new(1, 0, 1, 0),
-		GroupTransparency      = 0,
-		ZIndex                 = 1,
-	}, UDim.new(0, 5))
+		BorderSizePixel   = 0,
+		Size              = UDim2.new(1,0,1,0),
+		GroupTransparency = 0,
+		ZIndex            = 1,
+	}, UDim.new(0,5))
 	Canvas.Parent = Holder
 
-	-- Keep a reference to Canvas's UICorner so we can toggle circular mode
-	local canvasCorner = Canvas:FindFirstChildOfClass("UICorner")
-	if Config.circular and canvasCorner then
-		canvasCorner.CornerRadius = UDim.new(0.5, 0)
-	end
-
-	-- Sub-layers (all inside Canvas so they are all clipped together)
 	local RingsContainer = Instance.new("Frame")
-	RingsContainer.Name               = "Rings"
-	RingsContainer.BackgroundTransparency = 1
-	RingsContainer.BorderSizePixel    = 0
-	RingsContainer.Size               = UDim2.new(1, 0, 1, 0)
-	RingsContainer.ZIndex             = 1
-	RingsContainer.Parent             = Canvas
+	RingsContainer.Name = "Rings"; RingsContainer.BackgroundTransparency = 1
+	RingsContainer.BorderSizePixel = 0; RingsContainer.Size = UDim2.new(1,0,1,0)
+	RingsContainer.ZIndex = 1; RingsContainer.Parent = Canvas
 
 	local GridContainer = SelfModules.UI.Create("Frame", {
-		Name                   = "Grid",
-		BackgroundTransparency = 1,
-		AnchorPoint            = Vector2.new(0.5, 0.5),
-		Position               = UDim2.new(0.5, 0, 0.5, 0),
-		Size                   = UDim2.new(1.5, 0, 1.5, 0),
-		ZIndex                 = 2,
+		Name = "Grid", BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5,0.5),
+		Position    = UDim2.new(0.5,0,0.5,0),
+		Size        = UDim2.new(1.5,0,1.5,0),
+		ZIndex      = 2,
 	})
 	GridContainer.Parent = Canvas
 
 	local SurrContainer = Instance.new("Frame")
-	SurrContainer.Name               = "Surroundings"
-	SurrContainer.BackgroundTransparency = 1
-	SurrContainer.BorderSizePixel    = 0
-	SurrContainer.Size               = UDim2.new(1, 0, 1, 0)
-	SurrContainer.ZIndex             = 3
-	SurrContainer.Parent             = Canvas
+	SurrContainer.Name = "Surroundings"; SurrContainer.BackgroundTransparency = 1
+	SurrContainer.BorderSizePixel = 0; SurrContainer.Size = UDim2.new(1,0,1,0)
+	SurrContainer.ZIndex = 3; SurrContainer.Parent = Canvas
 
 	local PathContainer = Instance.new("Frame")
-	PathContainer.Name               = "Pathway"
-	PathContainer.BackgroundTransparency = 1
-	PathContainer.BorderSizePixel    = 0
-	PathContainer.Size               = UDim2.new(1, 0, 1, 0)
-	PathContainer.ZIndex             = 4
-	PathContainer.Parent             = Canvas
+	PathContainer.Name = "Pathway"; PathContainer.BackgroundTransparency = 1
+	PathContainer.BorderSizePixel = 0; PathContainer.Size = UDim2.new(1,0,1,0)
+	PathContainer.ZIndex = 4; PathContainer.Parent = Canvas
 
-	-- Player self-dot (inside Canvas, always on top of other dots)
+	-- Player dot
 	local PlayerDot = Instance.new("Frame")
-	PlayerDot.Name             = "PlayerDot"
-	PlayerDot.AnchorPoint      = Vector2.new(0.5, 0.5)
-	PlayerDot.Size             = UDim2.new(0, Config.playerdotsize, 0, Config.playerdotsize)
+	PlayerDot.Name = "PlayerDot"; PlayerDot.AnchorPoint = Vector2.new(0.5,0.5)
+	PlayerDot.Size = UDim2.new(0,Config.playerdotsize,0,Config.playerdotsize)
 	PlayerDot.BackgroundColor3 = Config.playercolor
-	PlayerDot.BorderSizePixel  = 0
-	PlayerDot.ZIndex           = 10
-	PlayerDot.Rotation         = 45
-	PlayerDot.Visible          = Config.showplayerdot
-	PlayerDot.Parent           = Canvas
-	local pdCorner = Instance.new("UICorner")
-	pdCorner.CornerRadius = UDim.new(0, 2)
-	pdCorner.Parent       = PlayerDot
-	local pdStroke = Instance.new("UIStroke")
-	pdStroke.Color     = Color3.fromRGB(0, 0, 0)
-	pdStroke.Thickness = 1
-	pdStroke.Parent    = PlayerDot
+	PlayerDot.BorderSizePixel = 0; PlayerDot.ZIndex = 10
+	PlayerDot.Visible = Config.showplayerdot; PlayerDot.Parent = Canvas
+	local pdCorner = Instance.new("UICorner"); pdCorner.Parent = PlayerDot
+	Instance.new("UIStroke", PlayerDot).Color = Color3.new(0,0,0)
+	local pdGlow = makeGlow(PlayerDot, Config.playercolor)
+	applyShape(PlayerDot, pdCorner, Config.playerdotshape)
 
-	-- Compass: sits on Holder (NOT Canvas) so it's never clipped by the canvas corner
-	local CompassLabel = Instance.new("TextLabel")
-	CompassLabel.Name                   = "Compass"
-	CompassLabel.AnchorPoint            = Vector2.new(0.5, 0.5)
-	CompassLabel.BackgroundTransparency = 1
-	CompassLabel.Text                   = "N"
-	CompassLabel.Font                   = Enum.Font.GothamBold
-	CompassLabel.TextSize               = 9
-	CompassLabel.Size                   = UDim2.new(0, 16, 0, 16)
-	CompassLabel.ZIndex                 = 20
-	CompassLabel.Visible                = Config.compass
-	CompassLabel.Parent                 = Holder
-
-	if Config.isdraggable then
-		SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08)
-	end
+	if Config.isdraggable then SelfModules.UI.MakeDraggable(Main, TitleBar, 0.08) end
 	Main.Parent = ScreenGui
 
-	-- ── Grid builder ────────────────────────────────────────────────────────
+	-- ── Grid ────────────────────────────────────────────────────────────────
 	local _gs = {}
 	local function buildGrid()
 		for _, c in ipairs(GridContainer:GetChildren()) do c:Destroy() end
-		_gs = { enabled = Config.grid, spacing = Config.gridspacing,
-		        thickness = Config.gridthickness, color = Config.gridcolor, size = Config.size }
+		_gs = { enabled=Config.grid, spacing=Config.gridspacing,
+		        thickness=Config.gridthickness, color=Config.gridcolor,
+		        transparency=Config.gridtransparency, size=Config.size }
 		if not Config.grid then return end
-		local approxPx = Config.size * 1.5
-		local sp       = math.max(Config.gridspacing, 1)
-		local n        = math.ceil(approxPx / sp) + 1
-		local t        = math.max(Config.gridthickness, 1)
-		local col      = Config.gridcolor
+		local apx = Config.size * 1.5
+		local sp   = math.max(Config.gridspacing, 1)
+		local n    = math.ceil(apx/sp) + 1
+		local t    = math.max(Config.gridthickness, 1)
+		local col  = Config.gridcolor
+		local tr   = math.clamp(Config.gridtransparency, 0, 1)
 		for i = 0, n do
-			local pct = (i * sp) / approxPx
-			if pct > 1 then break end
+			local pct = (i*sp)/apx; if pct > 1 then break end
 			local vl = Instance.new("Frame")
-			vl.BackgroundColor3 = col; vl.BorderSizePixel = 0
-			vl.Position = UDim2.new(pct,0,0,0); vl.Size = UDim2.new(0,t,1,0)
-			vl.Parent = GridContainer
+			vl.BackgroundColor3 = col; vl.BorderSizePixel = 0; vl.BackgroundTransparency = tr
+			vl.Position = UDim2.new(pct,0,0,0); vl.Size = UDim2.new(0,t,1,0); vl.Parent = GridContainer
+			makeGlow(vl, col)
 			local hl = Instance.new("Frame")
-			hl.BackgroundColor3 = col; hl.BorderSizePixel = 0
-			hl.Position = UDim2.new(0,0,pct,0); hl.Size = UDim2.new(1,0,0,t)
-			hl.Parent = GridContainer
+			hl.BackgroundColor3 = col; hl.BorderSizePixel = 0; hl.BackgroundTransparency = tr
+			hl.Position = UDim2.new(0,0,pct,0); hl.Size = UDim2.new(1,0,0,t); hl.Parent = GridContainer
+			makeGlow(hl, col)
 		end
 	end
 	buildGrid()
@@ -8234,927 +8220,996 @@ function Library:AddRadar(initialConfig)
 	local function getSurrDot(i)
 		if not surrPool[i] then
 			local f = Instance.new("Frame")
-			f.BorderSizePixel = 0; f.AnchorPoint = Vector2.new(0.5,0.5)
-			f.ZIndex = 3; f.Visible = false; f.Parent = SurrContainer
-			Instance.new("UICorner",f).CornerRadius = UDim.new(1,0)
-			surrPool[i] = f
+			f.BorderSizePixel=0; f.AnchorPoint=Vector2.new(0.5,0.5)
+			f.ZIndex=3; f.Visible=false; f.Parent=SurrContainer
+			Instance.new("UICorner",f).CornerRadius=UDim.new(1,0)
+			makeGlow(f, Color3.new(1,1,1)); surrPool[i]=f
 		end
 		return surrPool[i]
 	end
 	local function hideSurrFrom(from)
-		for i = from, #surrPool do if surrPool[i] then surrPool[i].Visible = false end end
+		for i=from,#surrPool do if surrPool[i] then surrPool[i].Visible=false end end
 	end
 
 	local pathPool = {}
 	local function getPathLine(i)
 		if not pathPool[i] then
 			local f = Instance.new("Frame")
-			f.BorderSizePixel = 0; f.AnchorPoint = Vector2.new(0.5,0.5)
-			f.ZIndex = 4; f.Visible = false; f.Parent = PathContainer
-			pathPool[i] = f
+			f.BorderSizePixel=0; f.AnchorPoint=Vector2.new(0.5,0.5)
+			f.ZIndex=4; f.Visible=false; f.Parent=PathContainer
+			makeGlow(f, Color3.new(1,1,1)); pathPool[i]=f
 		end
 		return pathPool[i]
 	end
 	local function hidePathFrom(from)
-		for i = from, #pathPool do if pathPool[i] then pathPool[i].Visible = false end end
+		for i=from,#pathPool do if pathPool[i] then pathPool[i].Visible=false end end
 	end
 
 	local ringPool = {}
 	local function getRing(i)
 		if not ringPool[i] then
 			local f = Instance.new("Frame")
-			f.BackgroundTransparency = 1; f.BorderSizePixel = 0
-			f.AnchorPoint = Vector2.new(0.5,0.5)
-			f.Position    = UDim2.new(0.5,0,0.5,0)
-			f.ZIndex = 1; f.Visible = false; f.Parent = RingsContainer
-			local c = Instance.new("UICorner")
-			c.CornerRadius = UDim.new(0.5,0); c.Parent = f
-			local s = Instance.new("UIStroke")
-			s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = f
-			local lbl = Instance.new("TextLabel")
-			lbl.Name = "DistLabel"; lbl.AnchorPoint = Vector2.new(0.5,0)
-			lbl.BackgroundTransparency = 1; lbl.Size = UDim2.new(0,36,0,10)
-			lbl.Font = Enum.Font.Gotham; lbl.TextSize = 8; lbl.ZIndex = 2
-			lbl.Parent = f
-			ringPool[i] = f
+			f.BackgroundTransparency=1; f.BorderSizePixel=0
+			f.AnchorPoint=Vector2.new(0.5,0.5); f.Position=UDim2.new(0.5,0,0.5,0)
+			f.ZIndex=1; f.Visible=false; f.Parent=RingsContainer
+			Instance.new("UICorner",f).CornerRadius=UDim.new(0.5,0)
+			local s=Instance.new("UIStroke"); s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=f
+			local lbl=Instance.new("TextLabel")
+			lbl.Name="DistLabel"; lbl.AnchorPoint=Vector2.new(0.5,0)
+			lbl.BackgroundTransparency=1; lbl.Size=UDim2.new(0,36,0,10)
+			lbl.Font=Enum.Font.Gotham; lbl.TextSize=8; lbl.ZIndex=2; lbl.Parent=f
+			ringPool[i]=f
 		end
 		return ringPool[i]
 	end
 	local function hideRingsFrom(from)
-		for i = from, #ringPool do if ringPool[i] then ringPool[i].Visible = false end end
+		for i=from,#ringPool do if ringPool[i] then ringPool[i].Visible=false end end
 	end
 
 	-- ── Raycast params ──────────────────────────────────────────────────────
-	local surrParams = RaycastParams.new()
-	surrParams.FilterType = Enum.RaycastFilterType.Exclude
-	local wallParams = RaycastParams.new()
-	wallParams.FilterType = Enum.RaycastFilterType.Exclude
+	local surrParams = RaycastParams.new(); surrParams.FilterType = Enum.RaycastFilterType.Exclude
+	local wallParams = RaycastParams.new(); wallParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	-- ── Path segment validation ─────────────────────────────────────────────
-	-- Runs once per path compute (inside task.spawn). Checks two things:
-	-- (1) CanCollide=false "fake wall" crossing. (2) Perpendicular corridor width.
-	local function validateSegments(wps, charFilter, agentRadius)
-		local valid  = {}
+	-- ── Path validation ─────────────────────────────────────────────────────
+	local function validateSegments(wps, charFilter, agentRadius, ignoreNonCollidable)
+		local valid = {}
 		local params = RaycastParams.new()
-		params.FilterType                 = Enum.RaycastFilterType.Exclude
+		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = charFilter
-		local lift    = Vector3.new(0, 1.5, 0)
-		local minClear = agentRadius * 0.8
-
-		for i = 1, #wps - 1 do
-			local from = wps[i]
-			local to   = wps[i+1]
-			local seg  = to - from
-
-			-- (1) Forward: flag CanCollide=false fake walls
-			local fwd = WS:Raycast(from + lift, seg, params)
-			if fwd and fwd.Instance:IsA("BasePart") and not fwd.Instance.CanCollide then
-				valid[i] = false; continue
+		local lift = Vector3.new(0,1.5,0); local minClear = agentRadius * 0.8
+		for i = 1, #wps-1 do
+			local from=wps[i]; local to=wps[i+1]; local seg=to-from
+			local fwd = WS:Raycast(from+lift, seg, params)
+			if fwd and fwd.Instance:IsA("BasePart") and not fwd.Instance.CanCollide and not ignoreNonCollidable then
+				valid[i]=false; continue
 			end
-
-			-- (2) Lateral clearance at midpoint (catches phantom narrow gaps)
-			local hSeg = Vector3.new(seg.X, 0, seg.Z)
+			local hSeg = Vector3.new(seg.X,0,seg.Z)
 			if hSeg.Magnitude > 0.1 then
-				local perp = Vector3.new(-hSeg.Z, 0, hSeg.X).Unit
-				local mid  = (from + to) * 0.5 + lift
-				local span = minClear + 0.5
-				local r1   = WS:Raycast(mid,  perp * span, params)
-				local r2   = WS:Raycast(mid, -perp * span, params)
-				valid[i] = not ((r1 and r1.Distance < minClear) or (r2 and r2.Distance < minClear))
+				local perp=Vector3.new(-hSeg.Z,0,hSeg.X).Unit
+				local mid=(from+to)*0.5+lift; local span=minClear+0.5
+				local r1=WS:Raycast(mid, perp*span, params)
+				local r2=WS:Raycast(mid,-perp*span, params)
+				valid[i]=not((r1 and r1.Distance<minClear)or(r2 and r2.Distance<minClear))
 			else
-				valid[i] = true
+				valid[i]=true
 			end
 		end
 		return valid
 	end
 
-	-- ── Dot storage ─────────────────────────────────────────────────────────
-	local Dots = {}
+	-- ── Marker storage ───────────────────────────────────────────────────────
+	local Markers = {}
 
-	-- Shape helper: update a dot's UICorner for the requested shape
-	local function applyShape(dot, corner, shape)
-		local ds = dot.Size.X.Offset
-		if shape == "square" then
-			dot.Rotation    = 0
-			corner.CornerRadius = UDim.new(0, 3)
-		elseif shape == "diamond" then
-			dot.Rotation    = 45
-			corner.CornerRadius = UDim.new(0, 2)
-		else  -- circle (default)
-			dot.Rotation    = 0
-			corner.CornerRadius = UDim.new(1, 0)
-		end
-	end
-
-	local function spawnDot(name, data)
-		local ds      = data.dotsize       or 5
-		local color   = data.color         or Color3.fromRGB(255, 255, 255)
-		local font    = data.font          or Enum.Font.Gotham
-		local ts      = data.titlesize     or 9
-		local title   = data.title
-		local rpath   = data.renderpath    == true
-		local pcol    = data.pathcolor     or Color3.fromRGB(255, 220, 80)
-		local pthick  = data.paththickness or 1
-		local pulsate = data.pulsate       == true
-		local shape   = data.shape         or "circle"
-		local showdist= data.showdistance  == true
-
-		-- Zero-size anchor: a pure position marker inside Canvas
-		local anchor = Instance.new("Frame")
-		anchor.Name = name; anchor.BackgroundTransparency = 1
-		anchor.BorderSizePixel = 0; anchor.Size = UDim2.new(0,0,0,0)
-		anchor.ZIndex = 5; anchor.Parent = Canvas
-
-		-- Dot: AnchorPoint(0.5,0.5) keeps it dead-centred regardless of size
-		local dot = Instance.new("Frame")
-		dot.Name = "Dot"; dot.AnchorPoint = Vector2.new(0.5, 0.5)
-		dot.Position = UDim2.new(0,0,0,0); dot.Size = UDim2.new(0,ds,0,ds)
-		dot.BackgroundColor3 = color; dot.BorderSizePixel = 0
-		dot.ZIndex = 6; dot.Parent = anchor
-		local dotCorner = Instance.new("UICorner"); dotCorner.Parent = dot
-		applyShape(dot, dotCorner, shape)
-		local dotStroke = Instance.new("UIStroke")
-		dotStroke.Color = Color3.fromRGB(0,0,0); dotStroke.Thickness = 1
-		dotStroke.Transparency = 0.6; dotStroke.Parent = dot
-
-		-- Title label
-		local lbl = Instance.new("TextLabel")
-		lbl.Name = "Title"; lbl.AnchorPoint = Vector2.new(0.5, 0)
-		lbl.BackgroundTransparency = 1; lbl.Size = UDim2.new(0,80,0,ts+2)
-		lbl.Position = UDim2.new(0,0,0,ds/2+2)
-		lbl.Text = type(title)=="string" and title or ""
-		lbl.TextColor3 = color; lbl.TextSize = ts; lbl.Font = font
-		lbl.TextXAlignment = Enum.TextXAlignment.Center
-		lbl.Visible = type(title)=="string" and title ~= ""
-		lbl.ZIndex = 7; lbl.Parent = anchor
-		local lblStroke = Instance.new("UIStroke")
-		lblStroke.Color = Color3.fromRGB(0,0,0); lblStroke.Thickness = 1
-		lblStroke.Parent = lbl
-
-		-- Distance label (below title)
-		local distLbl = Instance.new("TextLabel")
-		distLbl.Name = "DistLabel"; distLbl.AnchorPoint = Vector2.new(0.5,0)
-		distLbl.BackgroundTransparency = 1; distLbl.Size = UDim2.new(0,60,0,10)
-		distLbl.Position = UDim2.new(0,0,0,ds/2+ts+4)
-		distLbl.TextColor3 = SelfModules.UI.Color.Add(color, Color3.fromRGB(-40,-40,-40))
-		distLbl.TextSize = 8; distLbl.Font = Enum.Font.Gotham
-		distLbl.BackgroundTransparency = 1; distLbl.TextXAlignment = Enum.TextXAlignment.Center
-		distLbl.Visible = showdist; distLbl.ZIndex = 7; distLbl.Parent = anchor
-		local dlStroke = Instance.new("UIStroke")
-		dlStroke.Color = Color3.fromRGB(0,0,0); dlStroke.Thickness = 1
-		dlStroke.Parent = distLbl
-
-		-- Edge arrow: shown instead of dot when off-screen/clamped
-		local arrowLbl = Instance.new("TextLabel")
-		arrowLbl.Name = "Arrow"; arrowLbl.AnchorPoint = Vector2.new(0.5,0.5)
-		arrowLbl.BackgroundTransparency = 1; arrowLbl.Size = UDim2.new(0,14,0,14)
-		arrowLbl.Position = UDim2.new(0,0,0,0)
-		arrowLbl.Text = "►"; arrowLbl.TextColor3 = color
-		arrowLbl.TextSize = 12; arrowLbl.Font = Enum.Font.GothamBold
-		arrowLbl.TextXAlignment = Enum.TextXAlignment.Center
-		arrowLbl.Visible = false; arrowLbl.ZIndex = 8; arrowLbl.Parent = anchor
-		local arrowStroke = Instance.new("UIStroke")
-		arrowStroke.Color = Color3.fromRGB(0,0,0); arrowStroke.Thickness = 1
-		arrowStroke.Parent = arrowLbl
-
-		return {
-			data = {
-				position      = data.position,
-				color         = color,
-				dotsize       = ds,
-				title         = title,
-				font          = font,
-				titlesize     = ts,
-				renderpath    = rpath,
-				pathcolor     = pcol,
-				paththickness = pthick,
-				pulsate       = pulsate,
-				shape         = shape,
-				showdistance  = showdist,
-			},
-			Frame      = anchor,
-			Dot        = dot,
-			DotCorner  = dotCorner,
-			Label      = lbl,
-			DistLabel  = distLbl,
-			Arrow      = arrowLbl,
-			_pathCache = nil,   -- { wps, valid } — old cache kept until new one is ready
-			_pathTimer = 0,     -- tick() of last compute; 0 = compute on first frame
-			_pathBusy  = false,
-			_lastEdit  = tick(),
-		}
-	end
-
-	local function applyData(obj, data)
-		local posChanged = data.position ~= nil and data.position ~= obj.data.position
-		if data.position      ~= nil then obj.data.position      = data.position      end
-		if data.color         ~= nil then obj.data.color         = data.color         end
-		if data.dotsize       ~= nil then obj.data.dotsize       = data.dotsize       end
-		if data.title         ~= nil then obj.data.title         = data.title         end
-		if data.font          ~= nil then obj.data.font          = data.font          end
-		if data.titlesize     ~= nil then obj.data.titlesize     = data.titlesize     end
-		if data.renderpath    ~= nil then obj.data.renderpath    = data.renderpath    end
-		if data.pathcolor     ~= nil then obj.data.pathcolor     = data.pathcolor     end
-		if data.paththickness ~= nil then obj.data.paththickness = data.paththickness end
-		if data.pulsate       ~= nil then obj.data.pulsate       = data.pulsate       end
-		if data.showdistance  ~= nil then obj.data.showdistance  = data.showdistance  end
-		if data.shape         ~= nil then
-			obj.data.shape = data.shape
-			applyShape(obj.Dot, obj.DotCorner, data.shape)
-		end
-
-		local ds    = obj.data.dotsize
-		local color = obj.data.color
-		local title = obj.data.title
-		local ts    = obj.data.titlesize
-
-		obj.Dot.Size             = UDim2.new(0,ds,0,ds)
-		obj.Dot.BackgroundColor3 = color
-		obj.Label.Position       = UDim2.new(0,0,0,ds/2+2)
-		obj.Label.Size           = UDim2.new(0,80,0,ts+2)
-		obj.Label.Text           = type(title)=="string" and title or ""
-		obj.Label.TextColor3     = color
-		obj.Label.TextSize       = ts
-		obj.Label.Font           = obj.data.font
-		obj.Label.Visible        = type(title)=="string" and title ~= ""
-		obj.DistLabel.Position   = UDim2.new(0,0,0,ds/2+ts+4)
-		obj.DistLabel.Visible    = obj.data.showdistance
-		obj.Arrow.TextColor3     = color
-		obj._lastEdit            = tick()
-
-		return posChanged
-	end
-
-	-- ── Smart path scheduler ────────────────────────────────────────────────
-	-- Independent per-dot: no shared queue.
-	-- Tries 3 progressively smaller agents on failure.
-	-- On total failure clears the cache (path disappears cleanly).
-	-- Old cache stays visible until the new one is atomically assigned → no flicker.
+	-- ── Path scheduler ───────────────────────────────────────────────────────
 	local Y_THRESHOLD = 15
 	local AGENT_ATTEMPTS = {
-		{ AgentRadius = 2,   AgentHeight = 5, AgentCanJump = true, AgentMaxSlope = 45 },
-		{ AgentRadius = 1,   AgentHeight = 3, AgentCanJump = true, AgentMaxSlope = 45 },
-		{ AgentRadius = 0.5, AgentHeight = 2, AgentCanJump = true, AgentMaxSlope = 45 },
+		{AgentRadius=2,   AgentHeight=5, AgentCanJump=true, AgentMaxSlope=45},
+		{AgentRadius=1,   AgentHeight=3, AgentCanJump=true, AgentMaxSlope=45},
+		{AgentRadius=0.5, AgentHeight=2, AgentCanJump=true, AgentMaxSlope=45},
 	}
 
-	local function schedulePath(obj, name, localPos, worldPos)
-		if obj._pathBusy then return end
-		if tick() - obj._pathTimer < Config.pathfindcooldown then return end
-		if math.abs(worldPos.Y - localPos.Y) > Y_THRESHOLD then return end
+	local function schedulePath(marker, name, localPos, worldPos)
+		if not Config.renderpath or not marker.data.renderpath then return end
+		if marker._pathBusy then return end
+		if tick()-marker._pathTimer < Config.pathfindcooldown then return end
+		if math.abs(worldPos.Y-localPos.Y) > Y_THRESHOLD then return end
 
-		obj._pathBusy  = true
-		obj._pathTimer = tick()
-		local snapPos  = worldPos
-		local snapLocal= localPos
-
-		local charFilter = {}
-		for _, p in ipairs(Players:GetPlayers()) do
+		marker._pathBusy = true; marker._pathTimer = tick()
+		local snapPos=worldPos; local snapLocal=localPos
+		local charFilter={}
+		for _,p in ipairs(Players:GetPlayers()) do
 			if p.Character then table.insert(charFilter, p.Character) end
 		end
+		local ignNon = marker.data.pathignorenoncollidable == true
 
 		task.spawn(function()
-			if Dots[name] ~= obj then obj._pathBusy = false; return end
-
+			if Markers[name]~=marker then marker._pathBusy=false; return end
 			local newWps, usedAgent = nil, nil
-
-			for _, agentCfg in ipairs(AGENT_ATTEMPTS) do
-				local path = PFS:CreatePath(agentCfg)
-				local ok   = pcall(path.ComputeAsync, path, snapLocal, snapPos)
-
-				if Dots[name] ~= obj then obj._pathBusy = false; return end
-
-				-- Abort if position drifted during async yield (Edit() was called)
-				local curRaw = obj.data.position
-				if curRaw then
-					if (toVec3(curRaw, snapLocal.Y) - snapPos).Magnitude > 3 then
-						obj._pathBusy = false; return
-					end
-				end
-
-				if ok and path.Status == Enum.PathStatus.Success then
-					local wps = {}
-					for _, wp in ipairs(path:GetWaypoints()) do
-						table.insert(wps, wp.Position)
-					end
-					if #wps > 1 then newWps = wps; usedAgent = agentCfg; break end
+			for _,agentCfg in ipairs(AGENT_ATTEMPTS) do
+				local path=PFS:CreatePath(agentCfg)
+				local ok=pcall(path.ComputeAsync, path, snapLocal, snapPos)
+				if Markers[name]~=marker then marker._pathBusy=false; return end
+				local cur=marker.data.position
+				if cur and (toVec3(cur,snapLocal.Y)-snapPos).Magnitude>3 then marker._pathBusy=false; return end
+				if ok and path.Status==Enum.PathStatus.Success then
+					local wps={}
+					for _,wp in ipairs(path:GetWaypoints()) do table.insert(wps,wp.Position) end
+					if #wps>1 then newWps=wps; usedAgent=agentCfg; break end
 				end
 			end
-
 			if newWps then
-				if not pathsMatch(obj._pathCache and obj._pathCache.wps, newWps) then
-					obj._pathCache = {
-						wps   = newWps,
-						valid = validateSegments(newWps, charFilter, usedAgent.AgentRadius),
-					}
+				marker._isPathReachable=true
+				if not pathsMatch(marker._pathCache and marker._pathCache.wps, newWps) then
+					marker._pathCache={wps=newWps, valid=validateSegments(newWps,charFilter,usedAgent.AgentRadius,ignNon)}
 				end
 			else
-				obj._pathCache = nil  -- all 3 attempts failed → remove path from radar
+				marker._isPathReachable=false; marker._pathCache=nil
 			end
-
-			obj._pathBusy = false
+			marker._pathBusy=false
 		end)
 	end
 
-	-- ── Pan state ───────────────────────────────────────────────────────────
-	local panOffset    = Vector3.new(0, 0, 0)
+	-- ── Marker spawner ───────────────────────────────────────────────────────
+	local function commonMarkerData(data)
+		return {
+			type                   = data.type or "Dot",
+			tag                    = data.tag,
+			visible                = data.visible ~= false,
+			position               = data.position,
+			color                  = data.color or Color3.fromRGB(255,255,255),
+			font                   = data.font or Enum.Font.Gotham,
+			titlesize              = data.titlesize or 9,
+			showtitle              = data.showtitle ~= false,
+			title                  = data.title or "",
+			showdistance           = data.showdistance == true,
+			distancecolor          = data.distancecolor or Color3.fromRGB(200,200,200),
+			renderpath             = data.renderpath == true,
+			pathcolor              = data.pathcolor or Color3.fromRGB(255,220,70),
+			paththickness          = data.paththickness or 1,
+			pathignorenoncollidable= data.pathignorenoncollidable == true,
+			heat                   = data.heat == true,
+			heatstartdistance      = data.heatstartdistance or 100,
+			heatstartcolor         = data.heatstartcolor or Color3.fromRGB(85,255,0),
+			heatenddistance        = data.heatenddistance or 5,
+			heatendcolor           = data.heatendcolor or Color3.fromRGB(255,0,0),
+			overridepathcolor      = data.overridepathcolor == true,
+			-- Dot-specific
+			shape                  = data.shape or "circle",
+			dotsize                = data.dotsize or 5,
+			-- Text-specific
+			background             = data.background == true,
+			-- Image-specific
+			imageid                = data.imageid or "",
+			-- Bounds-specific
+			boundsize              = data.boundsize or 15,
+			boundsradius           = data.boundsradius or UDim.new(0,4),
+			boundsthickness        = data.boundsthickness or 1,
+			boundsfilled           = data.boundsfilled == true,
+			boundsfilltransparency = data.boundsfilltransparency or 0.5,
+			boundsfillcolor        = data.boundsfillcolor or Color3.fromRGB(0,170,255),
+		}
+	end
+
+	local function addStroke(parent, color)
+		local s=Instance.new("UIStroke"); s.Color=color or Color3.new(0,0,0); s.Thickness=1; s.Parent=parent; return s
+	end
+
+	local function spawnMarker(name, data)
+		local d = commonMarkerData(data)
+		local color = d.color
+
+		local anchor = Instance.new("Frame")
+		anchor.Name=name; anchor.BackgroundTransparency=1
+		anchor.BorderSizePixel=0; anchor.Size=UDim2.new(0,0,0,0)
+		anchor.ZIndex=5; anchor.Parent=Canvas
+
+		local m = {
+			data=d, Frame=anchor,
+			_pathCache=nil, _pathTimer=0, _pathBusy=false,
+			_isPathReachable=false, _lastEdit=tick(),
+			_pathState="Idle", _gotoPathActive=false, _attemptPathActive=false,
+			-- visual refs (filled below per-type)
+			DotFrame=nil, DotCorner=nil, DotGlow=nil,
+			TriLabel=nil,
+			TextLabel=nil, TextBg=nil,
+			ImageLabel=nil,
+			BoundsFrame=nil, BoundsStroke=nil,
+			TitleLabel=nil, DistLabel=nil, ArrowLabel=nil,
+		}
+
+		-- ── Arrow (all types) ──────────────────────────────────────────────
+		local arrow = Instance.new("TextLabel")
+		arrow.Name="Arrow"; arrow.AnchorPoint=Vector2.new(0.5,0.5)
+		arrow.BackgroundTransparency=1; arrow.Size=UDim2.new(0,14,0,14)
+		arrow.Position=UDim2.new(0,0,0,0); arrow.Text=">"
+		arrow.Font=Enum.Font.GothamBold; arrow.TextSize=12
+		arrow.TextXAlignment=Enum.TextXAlignment.Center
+		arrow.Visible=false; arrow.ZIndex=8; arrow.Parent=anchor
+		addStroke(arrow, Color3.new(0,0,0))
+		m.ArrowLabel = arrow
+
+		-- ── Distance label (all types) ─────────────────────────────────────
+		local dl = Instance.new("TextLabel")
+		dl.Name="DistLabel"; dl.AnchorPoint=Vector2.new(0.5,0)
+		dl.BackgroundTransparency=1; dl.Size=UDim2.new(0,60,0,10)
+		dl.TextSize=8; dl.Font=Enum.Font.Gotham
+		dl.TextXAlignment=Enum.TextXAlignment.Center
+		dl.Visible=false; dl.ZIndex=7; dl.Parent=anchor
+		addStroke(dl, Color3.new(0,0,0))
+		m.DistLabel = dl
+
+		if d.type == "Dot" then
+			if d.shape == "triangle" then
+				-- Triangle via unicode character
+				local tri = Instance.new("TextLabel")
+				tri.Name="Dot"; tri.AnchorPoint=Vector2.new(0.5,0.5)
+				tri.Position=UDim2.new(0,0,0,0)
+				tri.BackgroundTransparency=1
+				tri.Size=UDim2.new(0,d.dotsize+6,0,d.dotsize+6)
+				tri.Text="▲"; tri.TextColor3=color
+				tri.TextSize=d.dotsize; tri.Font=Enum.Font.GothamBold
+				tri.TextXAlignment=Enum.TextXAlignment.Center
+				tri.ZIndex=6; tri.Parent=anchor
+				addStroke(tri, Color3.new(0,0,0))
+				makeGlow(tri, color)
+				m.TriLabel=tri
+			else
+				local dot = Instance.new("Frame")
+				dot.Name="Dot"; dot.AnchorPoint=Vector2.new(0.5,0.5)
+				dot.Position=UDim2.new(0,0,0,0); dot.Size=UDim2.new(0,d.dotsize,0,d.dotsize)
+				dot.BackgroundColor3=color; dot.BorderSizePixel=0; dot.ZIndex=6; dot.Parent=anchor
+				local dc=Instance.new("UICorner"); dc.Parent=dot; applyShape(dot,dc,d.shape)
+				local ds2=Instance.new("UIStroke"); ds2.Color=Color3.new(0,0,0); ds2.Thickness=1; ds2.Transparency=0.6; ds2.Parent=dot
+				local dg=makeGlow(dot, color)
+				m.DotFrame=dot; m.DotCorner=dc; m.DotGlow=dg
+			end
+			-- Title below dot
+			local tl=Instance.new("TextLabel")
+			tl.Name="Title"; tl.AnchorPoint=Vector2.new(0.5,0)
+			tl.BackgroundTransparency=1; tl.Size=UDim2.new(0,80,0,d.titlesize+2)
+			tl.Position=UDim2.new(0,0,0,d.dotsize/2+2)
+			tl.Text=d.title; tl.TextColor3=color; tl.TextSize=d.titlesize; tl.Font=d.font
+			tl.TextXAlignment=Enum.TextXAlignment.Center
+			tl.Visible=d.showtitle and d.title~=""; tl.ZIndex=7; tl.Parent=anchor
+			addStroke(tl, Color3.new(0,0,0))
+			m.TitleLabel=tl
+			dl.Position=UDim2.new(0,0,0,d.dotsize/2+d.titlesize+4)
+			dl.TextColor3=d.distancecolor
+
+		elseif d.type == "Text" then
+			if d.background then
+				local bg=Instance.new("Frame")
+				bg.Name="TextBg"; bg.AnchorPoint=Vector2.new(0.5,0.5)
+				bg.Position=UDim2.new(0,0,0,0)
+				bg.BackgroundColor3=color; bg.BackgroundTransparency=0.4
+				bg.BorderSizePixel=0; bg.ZIndex=5; bg.Parent=anchor
+				Instance.new("UICorner",bg).CornerRadius=UDim.new(0,4)
+				m.TextBg=bg
+			end
+			local tl=Instance.new("TextLabel")
+			tl.Name="TextLabel"; tl.AnchorPoint=Vector2.new(0.5,0.5)
+			tl.BackgroundTransparency=1; tl.Position=UDim2.new(0,0,0,0)
+			tl.Text=d.title; tl.TextColor3=color; tl.TextSize=d.titlesize; tl.Font=d.font
+			tl.TextXAlignment=Enum.TextXAlignment.Center
+			tl.Size=UDim2.new(0,math.max(40,d.titlesize*#d.title),0,d.titlesize+6)
+			tl.Visible=d.showtitle and d.title~=""; tl.ZIndex=6; tl.Parent=anchor
+			local tlStroke=Instance.new("UIStroke"); tlStroke.Color=Color3.new(0,0,0); tlStroke.Thickness=1.5; tlStroke.Parent=tl
+			m.TextLabel=tl
+			dl.Position=UDim2.new(0,0,0,d.titlesize/2+4)
+			dl.TextColor3=d.distancecolor
+
+		elseif d.type == "Image" then
+			local ds3=d.dotsize or 18
+			local img=Instance.new("ImageLabel")
+			img.Name="Image"; img.AnchorPoint=Vector2.new(0.5,0.5)
+			img.Position=UDim2.new(0,0,0,0); img.Size=UDim2.new(0,ds3,0,ds3)
+			img.BackgroundTransparency=1; img.BorderSizePixel=0
+			img.Image=d.imageid; img.ImageColor3=color
+			img.ZIndex=6; img.Parent=anchor
+			makeGlow(img, color)
+			m.ImageLabel=img
+			-- Title below image
+			local tl=Instance.new("TextLabel")
+			tl.Name="Title"; tl.AnchorPoint=Vector2.new(0.5,0)
+			tl.BackgroundTransparency=1; tl.Size=UDim2.new(0,80,0,d.titlesize+2)
+			tl.Position=UDim2.new(0,0,0,ds3/2+2)
+			tl.Text=d.title; tl.TextColor3=color; tl.TextSize=d.titlesize; tl.Font=d.font
+			tl.TextXAlignment=Enum.TextXAlignment.Center
+			tl.Visible=d.showtitle and d.title~=""; tl.ZIndex=7; tl.Parent=anchor
+			addStroke(tl, Color3.new(0,0,0))
+			m.TitleLabel=tl
+			dl.Position=UDim2.new(0,0,0,ds3/2+d.titlesize+4)
+			dl.TextColor3=d.distancecolor
+
+		elseif d.type == "Bounds" then
+			local bf=Instance.new("Frame")
+			bf.Name="Bounds"; bf.AnchorPoint=Vector2.new(0.5,0.5)
+			bf.Position=UDim2.new(0,0,0,0); bf.Size=UDim2.new(0,d.boundsize*2,0,d.boundsize*2)
+			bf.BackgroundColor3=d.boundsfilled and d.boundsfillcolor or Color3.new(0,0,0)
+			bf.BackgroundTransparency=d.boundsfilled and d.boundsfilltransparency or 1
+			bf.BorderSizePixel=0; bf.ZIndex=5; bf.Parent=anchor
+			local bc=Instance.new("UICorner"); bc.CornerRadius=d.boundsradius; bc.Parent=bf
+			local bst=Instance.new("UIStroke"); bst.Color=color
+			bst.Thickness=d.boundsthickness; bst.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; bst.Parent=bf
+			m.BoundsFrame=bf; m.BoundsStroke=bst
+			local tl=Instance.new("TextLabel")
+			tl.Name="Title"; tl.AnchorPoint=Vector2.new(0.5,1)
+			tl.BackgroundTransparency=1; tl.Size=UDim2.new(0,80,0,d.titlesize+2)
+			tl.Position=UDim2.new(0.5,-40,0,-2)
+			tl.Text=d.title; tl.TextColor3=color; tl.TextSize=d.titlesize; tl.Font=d.font
+			tl.TextXAlignment=Enum.TextXAlignment.Center
+			tl.Visible=d.showtitle and d.title~=""; tl.ZIndex=7; tl.Parent=bf
+			addStroke(tl, Color3.new(0,0,0))
+			m.TitleLabel=tl
+			dl.Position=UDim2.new(0,0,0,d.boundsize+2)
+			dl.TextColor3=d.distancecolor
+		end
+
+		Markers[name] = m
+		return m
+	end
+
+	-- ── Edit marker ─────────────────────────────────────────────────────────
+	local function _edit(name, data)
+		local m=Markers[name]; if not m then return end
+		if data.type ~= nil and data.type ~= m.data.type then
+			error("[Radar] 'type' cannot be changed after creation.") return
+		end
+		local posChanged = data.position~=nil and data.position~=m.data.position
+		-- Update data fields (skip type)
+		local skip={type=true}
+		for k,v in pairs(data) do
+			if not skip[k] and m.data[k]~=nil then m.data[k]=v end
+		end
+		m._lastEdit=tick()
+		if posChanged or data.renderpath==true then m._pathTimer=0 end
+	end
+
+	local function _destroy(name)
+		local m=Markers[name]
+		if m and m.Frame then m.Frame:Destroy() end
+		Markers[name]=nil
+	end
+
+	-- ── Object builder ───────────────────────────────────────────────────────
+	local function makeObject(name)
+		local obj={_name=name}
+
+		function obj:IsA(typeName)
+			local m=Markers[name]; return m and m.data.type==typeName or false
+		end
+
+		function obj:IsTag(tagName)
+			local m=Markers[name]; return m and m.data.tag==tagName or false
+		end
+
+		function obj:Set(data)
+			assert(type(data)=="table","[Object:Set] expects a table")
+			_edit(name, data)
+		end
+
+		function obj:Get(key)
+			local m=Markers[name]; if not m then return nil end
+			if key then return m.data[key] end
+			return deepCopy(m.data)
+		end
+
+		function obj:Destroy() _destroy(name) end
+		function obj:Hide() local m=Markers[name]; if m then m.data.visible=false end end
+		function obj:Show() local m=Markers[name]; if m then m.data.visible=true  end end
+
+		function obj:Pulse(cfg)
+			local m=Markers[name]; if not m or not m.Frame then return end
+			cfg = cfg or {}
+			local duration = cfg.duration or 1
+			local total    = cfg.total    or 3
+			local pColor   = cfg.color    or m.data.color or Color3.new(1,1,1)
+
+			task.spawn(function()
+				for _ = 1, total do
+					if not Markers[name] then break end
+					local ring = Instance.new("Frame")
+					ring.AnchorPoint = Vector2.new(0.5,0.5)
+					ring.Position    = UDim2.new(0,0,0,0)  -- centred on anchor; follows automatically
+					ring.BackgroundTransparency = 1
+					ring.BorderSizePixel = 0; ring.ZIndex = 9
+					ring.Parent = m.Frame  -- child of anchor — moves with marker
+					Instance.new("UICorner",ring).CornerRadius = UDim.new(0.5,0)
+					local rs = Instance.new("UIStroke")
+					rs.Color=pColor; rs.Thickness=2; rs.Parent=ring
+
+					local startTime = tick()
+					local startSize = (m.data.dotsize or 5) + 4
+					local endSize   = startSize + 28
+					local conn
+					conn = RunService.RenderStepped:Connect(function()
+						if not ring or not ring.Parent then conn:Disconnect(); return end
+						local t = math.min((tick()-startTime)/duration, 1)
+						local sz = startSize + (endSize-startSize)*t
+						ring.Size = UDim2.new(0,sz,0,sz)
+						rs.Transparency = t
+						if t >= 1 then conn:Disconnect(); ring:Destroy() end
+					end)
+					task.wait(duration)
+					if conn then conn:Disconnect() end
+					if ring and ring.Parent then ring:Destroy() end
+				end
+			end)
+		end
+
+		function obj:GotoPath()
+			local m=Markers[name]; if not m or not LP.Character then return end
+			local hum=LP.Character:FindFirstChild("Humanoid")
+			local hrp=LP.Character:FindFirstChild("HumanoidRootPart")
+			if not hum or not hrp then return end
+			m._gotoPathActive=true; m._pathState="Searching"
+
+			task.spawn(function()
+				local rawPos=m.data.position
+				if not rawPos then m._pathState="Failed"; m._gotoPathActive=false; return end
+				local worldPos=toVec3(rawPos, hrp.Position.Y)
+				local path=PFS:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=true})
+				local ok=pcall(path.ComputeAsync, path, hrp.Position, worldPos)
+
+				if not ok or path.Status~=Enum.PathStatus.Success then
+					m._pathState="Failed"; m._gotoPathActive=false; return
+				end
+
+				m._pathState="Following"
+				local waypoints=path:GetWaypoints()
+				for _,wp in ipairs(waypoints) do
+					if not m._gotoPathActive then break end
+					hum:MoveTo(wp.Position)
+					local reached=hum.MoveToFinished:Wait(6)
+					if not reached then
+						m._pathState="Failed"; m._gotoPathActive=false; return
+					end
+				end
+				m._pathState="Idle"; m._gotoPathActive=false
+			end)
+		end
+
+		function obj:CancelPath()
+			local m=Markers[name]; if not m then return end
+			m._gotoPathActive=false; m._pathState="Idle"
+			if LP.Character then
+				local hum=LP.Character:FindFirstChild("Humanoid")
+				local hrp=LP.Character:FindFirstChild("HumanoidRootPart")
+				if hum and hrp then hum:MoveTo(hrp.Position) end
+			end
+		end
+
+		function obj:GetPathState()
+			local m=Markers[name]; return m and m._pathState or "Idle"
+		end
+
+		function obj:AttemptPath(seconds)
+			local m=Markers[name]; if not m then return end
+			m._attemptPathActive=true
+			local endTime=tick()+(seconds or 5)
+			task.spawn(function()
+				while m._attemptPathActive and tick()<endTime do
+					local state=m._pathState
+					if state=="Idle" or state=="Failed" then obj:GotoPath() end
+					task.wait(2)
+				end
+				m._attemptPathActive=false
+			end)
+		end
+
+		return obj
+	end
+
+	-- ── Focus state ──────────────────────────────────────────────────────────
+	local focusPoint    = nil   -- Vector3 or nil (follow localPlayer)
+	local focusLoop     = false
+	local focusEndTime  = math.huge
+	local focusNameTrack= nil   -- track a named marker continuously
+
+	-- ── Pan state ────────────────────────────────────────────────────────────
+	local panOffset    = Vector3.new(0,0,0)
+	local panTarget    = Vector3.new(0,0,0)
 	local panActive    = false
-	local panResetting = false
 	local panDragging  = false
-	local panLastLMBUp = math.huge  -- math.huge → countdown never runs while held
+	local panLastLMBUp = math.huge
 	local panLastPos   = nil
 	local PAN_TIMEOUT  = 3
 
-	-- ── Smooth zoom ─────────────────────────────────────────────────────────
-	local displayZoom = Config.zoom
+	-- ── Zoom ─────────────────────────────────────────────────────────────────
+	local displayZoom    = Config.zoom
+	local cachedHits     = {}
+	local surrFrameCount = 0
+	local lastSize       = Config.size
 
-	-- ── Surroundings cache (re-project every frame, recast every N frames) ──
-	local cachedHits      = {}   -- { Vector3 world position... }
-	local surrFrameCount  = 0
-
-	-- ── Core update ─────────────────────────────────────────────────────────
-	local System   = { Connections = {} }
-	local lastSize = Config.size
-
-	local function getCameraYaw()
-		local _, yaw, _ = WS.CurrentCamera.CFrame:ToEulerAnglesYXZ()
-		return yaw
-	end
-
-	local function heatColor(flatDist)
-		local t   = math.clamp(flatDist / math.max(Config.maxdistance, 1), 0, 1)
-		local hue = (1 - t) * 0.33   -- green (1/3) → red (0)
-		return Color3.fromHSV(hue, 1, 1)
-	end
+	-- ── Core update ──────────────────────────────────────────────────────────
+	local System = { Connections = {} }
 
 	local function inFOV(charCF, targetPos)
-		if Config.radarfieldofview >= 360 then return true end
-		local fwd = Vector3.new(charCF.LookVector.X, 0, charCF.LookVector.Z)
-		if fwd.Magnitude < 1e-4 then return true end
-		fwd = fwd.Unit
-		local lp  = charCF.Position
-		local td  = Vector3.new(targetPos.X-lp.X, 0, targetPos.Z-lp.Z)
-		if td.Magnitude < 1e-4 then return true end
-		return math.deg(math.acos(math.clamp(fwd:Dot(td.Unit),-1,1)))
-		       <= Config.radarfieldofview / 2
+		if Config.radarfieldofview>=360 then return true end
+		local fwd=Vector3.new(charCF.LookVector.X,0,charCF.LookVector.Z)
+		if fwd.Magnitude<1e-4 then return true end
+		fwd=fwd.Unit
+		local lp=charCF.Position
+		local td=Vector3.new(targetPos.X-lp.X,0,targetPos.Z-lp.Z)
+		if td.Magnitude<1e-4 then return true end
+		return math.deg(math.acos(math.clamp(fwd:Dot(td.Unit),-1,1)))<=Config.radarfieldofview/2
 	end
 
 	local function occludedByWall(fromPos, toPos)
-		local f = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character then table.insert(f, p.Character) end
+		local f={}
+		for _,p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(f,p.Character) end end
+		wallParams.FilterDescendantsInstances=f
+		return WS:Raycast(fromPos, toPos-fromPos, wallParams)~=nil
+	end
+
+	local function getSurroundingsColor(hit)
+		if not Config.renderoverridecolorobject then return Config.rendercolor end
+		local inst=hit.Instance
+		if inst==WS.Terrain then
+			local custom=Config.renderoverridecolorobjectterrain[hit.Material]
+			return custom or WS.Terrain:GetMaterialColor(hit.Material)
+		elseif inst:IsA("BasePart") then
+			return inst.Color
 		end
-		wallParams.FilterDescendantsInstances = f
-		return WS:Raycast(fromPos, toPos - fromPos, wallParams) ~= nil
+		return Config.rendercolor
 	end
 
 	function System:Update(dt)
-		if not Config.enabled then Main.Visible = false; return end
-		Main.Visible = true
+		if not Config.enabled then Main.Visible=false; return end
+		Main.Visible=true
+		AccentBar.BackgroundColor3 = Config.radaraccent
 
 		if not LP.Character then return end
-		local root = LP.Character:FindFirstChild("HumanoidRootPart")
+		local root=LP.Character:FindFirstChild("HumanoidRootPart")
 		if not root then return end
 
-		local localPos = root.Position
-		local charCF   = root.CFrame
-		local yaw      = getCameraYaw()  -- computed once per frame
+		local localPos=root.Position; local charCF=root.CFrame; local yaw=getCameraYaw()
+		local halfW=Canvas.AbsoluteSize.X/2; local halfH=Canvas.AbsoluteSize.Y/2
+		if halfW<=0 or halfH<=0 then return end
 
-		local halfW = Canvas.AbsoluteSize.X / 2
-		local halfH = Canvas.AbsoluteSize.Y / 2
-		if halfW <= 0 or halfH <= 0 then return end
+		-- Smooth zoom
+		local tz=math.max(Config.zoom,1)
+		displayZoom = Config.smoothzoom and (displayZoom+(tz-displayZoom)*math.min(1,dt*8)) or tz
+		local scale=math.min(halfW,halfH)/displayZoom
 
-		-- ── Smooth zoom ────────────────────────────────────────────────────
-		local targetZoom = math.max(Config.zoom, 1)
-		if Config.smoothzoom then
-			displayZoom = displayZoom + (targetZoom - displayZoom) * math.min(1, dt * 8)
-		else
-			displayZoom = targetZoom
+		-- Pan timeout → smoothly zero panTarget
+		if panActive and not panDragging and tick()-panLastLMBUp>=PAN_TIMEOUT then
+			panActive=false; panTarget=Vector3.new(0,0,0)
 		end
-		local scale = math.min(halfW, halfH) / displayZoom
-
-		-- ── Pan timeout & smooth reset ─────────────────────────────────────
-		if panActive and not panDragging then
-			if tick() - panLastLMBUp >= PAN_TIMEOUT then
-				panActive    = false
-				panResetting = true
-			end
+		-- Smooth pan lerp
+		local sm=math.max(Config.pansmoothness,0.001)
+		panOffset=panOffset+(panTarget-panOffset)*math.min(1,dt*(1/sm))
+		if (panTarget-panOffset).Magnitude<0.01 then panOffset=panTarget end
+		if panOffset.Magnitude>Config.maxdistance then
+			panOffset=panOffset.Unit*Config.maxdistance; panTarget=panOffset
 		end
-		if panResetting then
-			local mag = panOffset.Magnitude
-			if mag > 0.05 then
-				panOffset   = panOffset * (1 - math.min(1, dt * 6))
+
+		-- Focus: named marker tracking takes priority
+		local baseFocus=localPos
+		if focusNameTrack then
+			local mf=Markers[focusNameTrack]
+			if mf and mf.data.position then
+				baseFocus=toVec3(mf.data.position, localPos.Y)
 			else
-				panOffset    = Vector3.new(0, 0, 0)
-				panResetting = false
+				focusNameTrack=nil
+			end
+		elseif focusPoint then
+			if focusLoop or tick()<focusEndTime then
+				baseFocus=focusPoint
+			else
+				focusPoint=nil
 			end
 		end
+		local viewCenter=baseFocus+panOffset
 
-		-- Clamp pan distance to maxdistance so the view can't go infinitely far
-		if panOffset.Magnitude > Config.maxdistance then
-			panOffset = panOffset.Unit * Config.maxdistance
+		-- Resize
+		if Config.size~=lastSize then
+			lastSize=Config.size; Main.Size=UDim2.new(0,Config.size+10,0,Config.size+40)
 		end
 
-		local viewCenter = localPos + panOffset
-
-		-- ── Live resize ────────────────────────────────────────────────────
-		if Config.size ~= lastSize then
-			lastSize  = Config.size
-			Main.Size = UDim2.new(0, Config.size+10, 0, Config.size+40)
-		end
-
-		-- ── Circular mode toggle ───────────────────────────────────────────
-		if canvasCorner then
-			canvasCorner.CornerRadius = Config.circular
-				and UDim.new(0.5, 0) or UDim.new(0, 5)
-		end
-
-		-- ── Grid rebuild on change ─────────────────────────────────────────
-		if Config.grid ~= _gs.enabled or Config.gridspacing ~= _gs.spacing
-		or Config.gridthickness ~= _gs.thickness or Config.gridcolor ~= _gs.color
-		or Config.size ~= _gs.size then
+		-- Grid
+		if Config.grid~=_gs.enabled or Config.gridspacing~=_gs.spacing
+		or Config.gridthickness~=_gs.thickness or Config.gridcolor~=_gs.color
+		or Config.gridtransparency~=_gs.transparency or Config.size~=_gs.size then
 			buildGrid()
 		end
 		if Config.grid then
-			GridContainer.Rotation = Config.gridrotate and math.deg(yaw) or 0
+			GridContainer.Rotation=Config.gridrotate and math.deg(yaw) or 0
 			if Config.gridstatic then
-				local sp = math.max(Config.gridspacing, 1)
-				local ox = (viewCenter.X * scale) % sp
-				local oz = (viewCenter.Z * scale) % sp
+				local sp=math.max(Config.gridspacing,1)
+				local ox=(viewCenter.X*scale)%sp; local oz=(viewCenter.Z*scale)%sp
 				if Config.gridrotate then
-					local sv = CFrame.Angles(0,-yaw,0) * Vector3.new(ox,0,oz)
-					ox, oz = sv.X, sv.Z
+					local sv=CFrame.Angles(0,-yaw,0)*Vector3.new(ox,0,oz); ox,oz=sv.X,sv.Z
 				end
-				GridContainer.Position = UDim2.new(0.5,-ox,0.5,-oz)
+				GridContainer.Position=UDim2.new(0.5,-ox,0.5,-oz)
 			else
-				GridContainer.Position = UDim2.new(0.5,0,0.5,0)
+				GridContainer.Position=UDim2.new(0.5,0,0.5,0)
 			end
 		end
 
-		-- ── Rings ──────────────────────────────────────────────────────────
+		-- Rings
 		if Config.rings then
-			local n = math.max(1, Config.ringcount)
-			for i = 1, n do
-				local ring  = getRing(i)
-				local wR    = Config.ringdistance * i
-				local pxR   = wR * scale
-				local diam  = pxR * 2
-				-- Only show if ring is large enough to see but not absurdly huge
-				ring.Visible  = pxR > 4 and pxR < math.max(halfW, halfH) * 4
-				ring.Size     = UDim2.new(0, diam, 0, diam)
-				local stroke  = ring:FindFirstChildOfClass("UIStroke")
-				if stroke then
-					stroke.Color        = Config.ringcolor
-					stroke.Thickness    = 1
-					stroke.Transparency = 0.5
-				end
-				local dlbl = ring:FindFirstChild("DistLabel")
-				if dlbl then
-					dlbl.Text      = math.floor(wR) .. "m"
-					dlbl.TextColor3= Config.ringcolor
-					-- Position at the top of the ring (12 o'clock)
-					dlbl.Position  = UDim2.new(0.5, -18, 0, 4)
-				end
+			local n=math.max(1,Config.ringcount)
+			for i=1,n do
+				local ring=getRing(i); local wR=Config.ringdistance*i; local pxR=wR*scale
+				ring.Visible=pxR>4 and pxR<math.max(halfW,halfH)*4
+				ring.Size=UDim2.new(0,pxR*2,0,pxR*2)
+				local st=ring:FindFirstChildOfClass("UIStroke")
+				if st then st.Color=Config.ringcolor; st.Transparency=0.5 end
+				local dl=ring:FindFirstChild("DistLabel")
+				if dl then dl.Text=math.floor(wR).."m"; dl.TextColor3=Config.ringcolor; dl.Position=UDim2.new(0.5,-18,0,4) end
 			end
-			hideRingsFrom(Config.ringcount + 1)
-		else
-			hideRingsFrom(1)
-		end
+			hideRingsFrom(n+1)
+		else hideRingsFrom(1) end
 
-		-- ── Compass ────────────────────────────────────────────────────────
-		CompassLabel.Visible = Config.compass
-		if Config.compass then
-			-- Project a far point in the "north" direction from actual player
-			local northWorld = localPos + Config.compassnorth * 100000
-			local nx, ny     = project(northWorld, viewCenter, yaw, scale, halfW, halfH)
-			local dx, dy     = nx - halfW, ny - halfH
-			local d          = math.sqrt(dx*dx + dy*dy)
-			if d > 0 then
-				dx, dy = dx/d, dy/d
-				local r  = math.min(halfW, halfH) - 11
-				CompassLabel.Position   = UDim2.new(0, halfW+dx*r, 0, halfH+dy*r)
-				CompassLabel.TextColor3 = Config.compasscolor
-			end
-		end
-
-		-- ── Surroundings ───────────────────────────────────────────────────
+		-- Surroundings
 		if Config.rendersurroundings then
-			surrFrameCount += 1
-			local interval = math.max(1, Config.surroundingsinterval)
-
-			-- Recast rays on interval frames; just reproject on other frames
-			if surrFrameCount % interval == 0 then
-				surrParams.FilterDescendantsInstances = { LP.Character }
-				local RAY_COUNT   = 72
-				local maxHits     = math.max(1, Config.maxrenderhits)
-				local initBounces = Config.reflectionalrender
-					and math.max(0, Config.reflectionalbounces) or 0
-				local MAX_WORK    = maxHits * 4
-
-				local newHits  = {}
-				local work     = {}
-
-				for i = 0, RAY_COUNT - 1 do
-					local a = (i / RAY_COUNT) * math.pi * 2
-					table.insert(work, {
-						pos  = localPos,
-						dir  = Vector3.new(math.sin(a), 0, math.cos(a)),
-						bl   = initBounces,
-					})
+			surrFrameCount+=1
+			if surrFrameCount%math.max(1,Config.surroundingsinterval)==0 then
+				surrParams.FilterDescendantsInstances={LP.Character}
+				local RC=72; local mH=math.max(1,Config.maxrenderhits)
+				local iB=Config.reflectionalrender and math.max(0,Config.reflectionalbounces) or 0
+				local MW=mH*4; local newHits={}; local work={}
+				for i=0,RC-1 do
+					local a=(i/RC)*math.pi*2
+					table.insert(work,{pos=localPos,dir=Vector3.new(math.sin(a),0,math.cos(a)),bl=iB})
 				end
-				if Config.reflectivedots then
-					local RAYS_PER_DOT = 12
-					for _, obj in pairs(Dots) do
-						if #work >= MAX_WORK then break end
-						local rp = obj.data.position
-						if not rp then continue end
-						local wp = toVec3(rp, localPos.Y)
-						for i = 0, RAYS_PER_DOT - 1 do
-							local a = (i / RAYS_PER_DOT) * math.pi * 2
-							table.insert(work, {
-								pos = wp,
-								dir = Vector3.new(math.sin(a), 0, math.cos(a)),
-								bl  = initBounces,
-							})
-						end
-					end
-				end
-
-				local wi = 1
-				while wi <= #work and #newHits < maxHits and wi <= MAX_WORK do
-					local item = work[wi]; wi += 1
-					local hit  = WS:Raycast(item.pos, item.dir * Config.maxdistance, surrParams)
+				local wi=1
+				while wi<=#work and #newHits<mH and wi<=MW do
+					local item=work[wi]; wi+=1
+					local hit=WS:Raycast(item.pos,item.dir*Config.maxdistance,surrParams)
 					if not hit then continue end
-
-					local inst   = hit.Instance
-					local isTerr = inst:IsA("Terrain")
+					local inst=hit.Instance; local isTerr=inst:IsA("Terrain")
 					if Config.ignoreterrain and isTerr then continue end
-					if Config.ignorenoncollidable and not isTerr
-						and inst:IsA("BasePart") and not inst.CanCollide then continue end
-
+					if Config.ignorenoncollidable and not isTerr and inst:IsA("BasePart") and not inst.CanCollide then continue end
 					if not isTerr then
-						local skip = false
-						local anc  = inst.Parent
-						while anc and anc ~= WS do
-							if anc:FindFirstChildOfClass("Humanoid") then skip=true;break end
-							anc = anc.Parent
-						end
+						local skip=false; local anc=inst.Parent
+						while anc and anc~=WS do if anc:FindFirstChildOfClass("Humanoid") then skip=true;break end; anc=anc.Parent end
 						if skip then continue end
 					end
-
-					table.insert(newHits, hit.Position)
-
-					if Config.reflectionalrender and item.bl > 0 and #work < MAX_WORK then
-						local n = hit.Normal
-						table.insert(work, {
-							pos = hit.Position + n * 0.05,
-							dir = (item.dir - 2*item.dir:Dot(n)*n).Unit,
-							bl  = item.bl - 1,
-						})
+					table.insert(newHits,{position=hit.Position,color=getSurroundingsColor(hit)})
+					if Config.reflectionalrender and item.bl>0 and #work<MW then
+						local n=hit.Normal
+						table.insert(work,{pos=hit.Position+n*0.05,dir=(item.dir-2*item.dir:Dot(n)*n).Unit,bl=item.bl-1})
 					end
 				end
-
-				cachedHits = newHits
+				cachedHits=newHits
 			end
-
-			-- Re-project cached hits every frame (stays accurate with pan/rotation)
-			local rSz  = math.max(1, Config.rendersize)
-			local rCol = Config.rendercolor
-			local shown = 0
-			for i, hitPos in ipairs(cachedHits) do
-				if i > Config.maxrenderhits then break end
-				local rx, ry = project(hitPos, viewCenter, yaw, scale, halfW, halfH)
-				shown += 1
-				local d = getSurrDot(shown)
-				d.BackgroundColor3 = rCol
-				d.Size             = UDim2.new(0, rSz, 0, rSz)
-				d.Position         = UDim2.new(0, rx, 0, ry)
-				d.Visible          = true
+			local rSz=math.max(1,Config.rendersize); local shown=0
+			for i,hd in ipairs(cachedHits) do
+				if i>Config.maxrenderhits then break end
+				local rx,ry=project(hd.position,viewCenter,yaw,scale,halfW,halfH)
+				shown+=1; local d=getSurrDot(shown)
+				d.BackgroundColor3=hd.color; d.Size=UDim2.new(0,rSz,0,rSz)
+				d.Position=UDim2.new(0,rx,0,ry); d.Visible=true
+				local gl=d:FindFirstChild("Glow")
+				if gl then gl.ImageColor3=hd.color; gl.ImageTransparency=Config.glowtransparency end
 			end
-			hideSurrFrom(shown + 1)
-		else
-			if #cachedHits > 0 then cachedHits = {} end
-			hideSurrFrom(1)
-		end
+			hideSurrFrom(shown+1)
+		else cachedHits={}; hideSurrFrom(1) end
 
-		-- ── Self / player dot ──────────────────────────────────────────────
-		PlayerDot.Visible = Config.showplayerdot
+		-- Player dot
+		PlayerDot.Visible=Config.showplayerdot
 		if Config.showplayerdot then
-			local px, py = project(localPos, viewCenter, yaw, scale, halfW, halfH)
-			PlayerDot.Position         = UDim2.new(0, px, 0, py)
-			PlayerDot.Size             = UDim2.new(0, Config.playerdotsize, 0, Config.playerdotsize)
-			PlayerDot.BackgroundColor3 = Config.playercolor
+			local px,py=project(localPos,viewCenter,yaw,scale,halfW,halfH)
+			PlayerDot.Position=UDim2.new(0,px,0,py)
+			PlayerDot.Size=UDim2.new(0,Config.playerdotsize,0,Config.playerdotsize)
+			PlayerDot.BackgroundColor3=Config.playercolor
+			applyShape(PlayerDot,pdCorner,Config.playerdotshape or "diamond")
+			pdGlow.ImageColor3=Config.playercolor; pdGlow.ImageTransparency=Config.glowtransparency
 		end
 
-		-- ── Dots ───────────────────────────────────────────────────────────
-		local pathIdx  = 0
-		local toRemove = {}
+		-- Markers
+		local pathIdx=0; local toRemove={}
 
-		for name, obj in pairs(Dots) do
-			if not obj.Frame or not obj.Frame.Parent then
-				toRemove[#toRemove+1] = name; continue
+		for name,marker in pairs(Markers) do
+			if not marker.Frame or not marker.Frame.Parent then toRemove[#toRemove+1]=name; continue end
+			if Config.staletime>0 and tick()-marker._lastEdit>Config.staletime then toRemove[#toRemove+1]=name; continue end
+			if not marker.data.visible then marker.Frame.Visible=false; continue end
+
+			local rawPos=marker.data.position
+			if not rawPos then marker.Frame.Visible=false; continue end
+
+			local worldPos=toVec3(rawPos,localPos.Y)
+			local flatDist=Vector3.new(worldPos.X-localPos.X,0,worldPos.Z-localPos.Z).Magnitude
+
+			if flatDist>Config.maxdistance then marker.Frame.Visible=false; continue end
+			if Config.radarfieldofview<360 and not inFOV(charCF,worldPos) then marker.Frame.Visible=false; continue end
+			if Config.ignorebehindwalls and occludedByWall(localPos,worldPos) then marker.Frame.Visible=false; continue end
+
+			-- Project + clamp
+			local rawRx,rawRy=project(worldPos,viewCenter,yaw,scale,halfW,halfH)
+			local rx,ry=rawRx,rawRy; local isClamped=false
+			if Config.clipsbounds then
+				local off=Config.clipsboundsoffset or 5
+				local cx=math.clamp(rawRx,off,halfW*2-off)
+				local cy=math.clamp(rawRy,off,halfH*2-off)
+				if cx~=rawRx or cy~=rawRy then isClamped=true end
+				rx,ry=cx,cy
 			end
+			marker.Frame.Position=UDim2.new(0,rx,0,ry); marker.Frame.Visible=true
 
-			-- Staletime: auto-remove dots that haven't been updated in N seconds
-			if Config.staletime > 0 and tick() - obj._lastEdit > Config.staletime then
-				toRemove[#toRemove+1] = name; continue
-			end
+			local color=resolveColor(marker,flatDist)
 
-			local rawPos = obj.data.position
-			if not rawPos then obj.Frame.Visible = false; continue end
-
-			local worldPos = toVec3(rawPos, localPos.Y)
-			local flatDist = Vector3.new(worldPos.X-localPos.X, 0, worldPos.Z-localPos.Z).Magnitude
-
-			-- Visibility gates (always tested against real player position)
-			if flatDist > Config.maxdistance then
-				obj.Frame.Visible = false; continue
-			end
-			if Config.radarfieldofview < 360 and not inFOV(charCF, worldPos) then
-				obj.Frame.Visible = false; continue
-			end
-			if Config.ignorebehindwalls and occludedByWall(localPos, worldPos) then
-				obj.Frame.Visible = false; continue
-			end
-
-			-- Project (uses viewCenter so pan affects dot positions)
-			local rawRx, rawRy = project(worldPos, viewCenter, yaw, scale, halfW, halfH)
-			local rx, ry       = rawRx, rawRy
-			local isClamped    = false
-
-			if Config.clipsdescendants then
-				local ds  = obj.data.dotsize
-				local pad = ds * 0.5
-				local cx  = math.clamp(rawRx, pad, halfW*2-pad)
-				local cy  = math.clamp(rawRy, pad, halfH*2-pad)
-				if cx ~= rawRx or cy ~= rawRy then isClamped = true end
-				rx, ry = cx, cy
-			end
-
-			obj.Frame.Position = UDim2.new(0, rx, 0, ry)
-			obj.Frame.Visible  = true
-
-			-- Determine display colour (heatmap overrides data colour)
-			local ds    = obj.data.dotsize
-			local color = Config.heatmap and heatColor(flatDist) or obj.data.color
-
-			-- Pulsate: oscillate dot size with a sine wave
-			if obj.data.pulsate then
-				local pulse = 0.7 + 0.3 * math.abs(math.sin(tick() * 2.5))
-				ds = math.round(obj.data.dotsize * pulse)
-			end
-
-			-- Refresh dot visuals live every frame
-			obj.Dot.Size             = UDim2.new(0, ds, 0, ds)
-			obj.Dot.BackgroundColor3 = color
-			obj.Label.Position       = UDim2.new(0, 0, 0, ds/2+2)
-			obj.Label.TextColor3     = color
-			obj.DistLabel.Position   = UDim2.new(0,0,0,ds/2 + obj.data.titlesize + 4)
-			obj.DistLabel.TextColor3 = SelfModules.UI.Color.Add(color, Color3.fromRGB(-40,-40,-40))
-			obj.Arrow.TextColor3     = color
-
-			-- Distance label text
-			if obj.data.showdistance then
-				obj.DistLabel.Text = math.floor(flatDist) .. "m"
-			end
-
-			-- Edge arrow vs dot
+			-- Edge arrow vs normal
 			if isClamped and Config.edgearrows then
-				obj.Dot.Visible   = false
-				obj.Label.Visible = false
-				obj.Arrow.Visible = true
-				-- Point arrow toward the unclamped world position
-				local dx = rawRx - halfW
-				local dy = rawRy - halfH
-				obj.Arrow.Rotation = math.deg(math.atan2(dy, dx))
+				-- hide main visual, show arrow
+				if marker.DotFrame  then marker.DotFrame.Visible=false end
+				if marker.TriLabel  then marker.TriLabel.Visible=false end
+				if marker.TextLabel then marker.TextLabel.Visible=false end
+				if marker.TextBg    then marker.TextBg.Visible=false end
+				if marker.ImageLabel then marker.ImageLabel.Visible=false end
+				if marker.BoundsFrame then marker.BoundsFrame.Visible=false end
+				if marker.TitleLabel then marker.TitleLabel.Visible=false end
+				marker.DistLabel.Visible=false
+				marker.ArrowLabel.Visible=true
+				marker.ArrowLabel.TextColor3=color
+				marker.ArrowLabel.Rotation=math.deg(math.atan2(rawRy-halfH,rawRx-halfW))
 			else
-				obj.Dot.Visible   = true
-				obj.Label.Visible = (type(obj.data.title)=="string" and obj.data.title~="")
-				obj.Arrow.Visible = false
-			end
+				marker.ArrowLabel.Visible=false
 
-			-- Distance fade
-			local alpha = 1
-			if Config.fadeondistance then
-				local fs = math.min(Config.distancetofade, Config.maxdistance)
-				local fr = Config.maxdistance - fs
-				if flatDist > fs and fr > 0 then
-					alpha = math.max(1-(flatDist-fs)/fr, 0.08)
+				if marker.data.type=="Dot" then
+					local ds=marker.data.dotsize
+					if marker.data.pulsate then
+						ds=math.round(ds*(0.7+0.3*math.abs(math.sin(tick()*2.5))))
+					end
+					if marker.DotFrame then
+						marker.DotFrame.Visible=true
+						marker.DotFrame.Size=UDim2.new(0,ds,0,ds)
+						marker.DotFrame.BackgroundColor3=color
+						if marker.DotGlow then
+							marker.DotGlow.ImageColor3=color
+							marker.DotGlow.ImageTransparency=Config.glowtransparency
+						end
+					end
+					if marker.TriLabel then
+						marker.TriLabel.Visible=true
+						marker.TriLabel.TextColor3=color
+						marker.TriLabel.TextSize=ds
+						marker.TriLabel.Size=UDim2.new(0,ds+6,0,ds+6)
+					end
+					if marker.TitleLabel then
+						local yOff=(marker.DotFrame and ds/2 or ds/2)+2
+						marker.TitleLabel.Position=UDim2.new(0,0,0,yOff)
+						marker.TitleLabel.Visible=marker.data.showtitle and marker.data.title~=""
+						marker.TitleLabel.TextColor3=color
+						marker.TitleLabel.TextSize=marker.data.titlesize
+						marker.TitleLabel.Font=marker.data.font
+						marker.TitleLabel.Text=marker.data.title
+					end
+					marker.DistLabel.Position=UDim2.new(0,0,0,ds/2+marker.data.titlesize+4)
+
+				elseif marker.data.type=="Text" then
+					local ts=marker.data.titlesize
+					local title=marker.data.title or ""
+					if marker.TextLabel then
+						marker.TextLabel.Visible=marker.data.showtitle and title~=""
+						marker.TextLabel.Text=title
+						marker.TextLabel.TextColor3=color
+						marker.TextLabel.TextSize=ts
+						marker.TextLabel.Font=marker.data.font
+						marker.TextLabel.Size=UDim2.new(0,math.max(40,ts*#title),0,ts+6)
+					end
+					if marker.TextBg then
+						marker.TextBg.Visible=marker.data.background and marker.data.showtitle and title~=""
+						marker.TextBg.BackgroundColor3=color
+						if marker.TextLabel then
+							marker.TextBg.Size=UDim2.new(0,marker.TextLabel.AbsoluteSize.X+8,0,ts+10)
+						end
+					end
+
+				elseif marker.data.type=="Image" then
+					local ds=marker.data.dotsize or 18
+					if marker.ImageLabel then
+						marker.ImageLabel.Visible=true
+						marker.ImageLabel.Image=marker.data.imageid
+						marker.ImageLabel.ImageColor3=color
+						marker.ImageLabel.Size=UDim2.new(0,ds,0,ds)
+					end
+					if marker.TitleLabel then
+						marker.TitleLabel.Visible=marker.data.showtitle and marker.data.title~=""
+						marker.TitleLabel.Position=UDim2.new(0,0,0,ds/2+2)
+						marker.TitleLabel.TextColor3=color
+						marker.TitleLabel.Text=marker.data.title
+					end
+					marker.DistLabel.Position=UDim2.new(0,0,0,ds/2+marker.data.titlesize+4)
+
+				elseif marker.data.type=="Bounds" then
+					local bs=marker.data.boundsize*scale
+					if marker.BoundsFrame then
+						marker.BoundsFrame.Visible=true
+						marker.BoundsFrame.Size=UDim2.new(0,bs*2,0,bs*2)
+						marker.BoundsFrame.BackgroundColor3=marker.data.boundsfillcolor
+						marker.BoundsFrame.BackgroundTransparency=marker.data.boundsfilled and marker.data.boundsfilltransparency or 1
+						if marker.BoundsStroke then
+							marker.BoundsStroke.Color=color
+							marker.BoundsStroke.Thickness=marker.data.boundsthickness
+						end
+					end
+					if marker.TitleLabel then
+						marker.TitleLabel.Visible=marker.data.showtitle and marker.data.title~=""
+						marker.TitleLabel.TextColor3=color
+						marker.TitleLabel.Text=marker.data.title
+					end
+					marker.DistLabel.Position=UDim2.new(0,0,0,bs+2)
+				end
+
+				-- Distance label (shared)
+				if marker.data.showdistance then
+					marker.DistLabel.Visible=true
+					marker.DistLabel.Text=math.floor(flatDist).."m"
+					marker.DistLabel.TextColor3=marker.data.distancecolor
+				else
+					marker.DistLabel.Visible=false
 				end
 			end
-			obj.Dot.BackgroundTransparency  = 1-alpha
-			obj.Label.TextTransparency      = 1-alpha
-			obj.DistLabel.TextTransparency  = 1-alpha
-			obj.Arrow.TextTransparency      = 1-alpha
-			local st = obj.Label:FindFirstChildOfClass("UIStroke")
-			if st then st.Transparency = 1-alpha end
 
-			-- Path scheduling (uses real localPos, not panned view)
-			if obj.data.renderpath then
-				schedulePath(obj, name, localPos, worldPos)
+			-- Path
+			if Config.renderpath and marker.data.renderpath then
+				schedulePath(marker,name,localPos,worldPos)
 			end
-
-			-- Path rendering with Catmull-Rom smoothing
-			-- Old cache stays visible while recomputing → zero flicker
-			if obj.data.renderpath and obj._pathCache then
-				local wps    = obj._pathCache.wps
-				local valid  = obj._pathCache.valid
-				local pCol   = obj.data.pathcolor
-				local pThick = math.max(1, obj.data.paththickness)
-				local steps  = Config.pathsmooth and math.max(1,Config.pathsmoothsteps) or 1
-
-				for i = 1, #wps - 1 do
+			if Config.renderpath and marker.data.renderpath and marker._pathCache then
+				local wps=marker._pathCache.wps; local valid=marker._pathCache.valid
+				local pCol=marker.data.pathcolor
+				if marker.data.overridepathcolor and marker.data.heat then pCol=color end
+				local pThick=math.max(1,marker.data.paththickness)
+				local steps=Config.pathsmooth and math.max(1,Config.pathsmoothsteps) or 1
+				for i=1,#wps-1 do
 					if not valid[i] then continue end
-
-					local p0 = i > 1       and wps[i-1]   or wps[i]
-					local p1 = wps[i]
-					local p2 = wps[i+1]
-					local p3 = i+2 <= #wps and wps[i+2]   or wps[i+1]
-
-					for s = 0, steps-1 do
-						local t0  = s  / steps
-						local t1  = (s+1) / steps
-						local pt0 = (steps > 1) and catmullRom(p0,p1,p2,p3,t0) or p1
-						local pt1 = (steps > 1) and catmullRom(p0,p1,p2,p3,t1) or p2
-
-						local x1,y1 = project(pt0, viewCenter, yaw, scale, halfW, halfH)
-						local x2,y2 = project(pt1, viewCenter, yaw, scale, halfW, halfH)
-						local dx,dy  = x2-x1, y2-y1
-						local len    = math.sqrt(dx*dx+dy*dy)
-
-						if len > 0.5 then
-							pathIdx += 1
-							local line = getPathLine(pathIdx)
-							line.BackgroundColor3 = pCol
-							line.Size             = UDim2.new(0,len,0,pThick)
-							line.Position         = UDim2.new(0,(x1+x2)*0.5,0,(y1+y2)*0.5)
-							line.Rotation         = math.deg(math.atan2(dy,dx))
-							line.Visible          = true
+					local p0=(i>1) and wps[i-1] or wps[i]
+					local p1=wps[i]; local p2=wps[i+1]
+					local p3=(i+2<=#wps) and wps[i+2] or wps[i+1]
+					for s=0,steps-1 do
+						local t0=s/steps; local t1=(s+1)/steps
+						local pt0=(steps>1) and catmullRom(p0,p1,p2,p3,t0) or p1
+						local pt1=(steps>1) and catmullRom(p0,p1,p2,p3,t1) or p2
+						local x1,y1=project(pt0,viewCenter,yaw,scale,halfW,halfH)
+						local x2,y2=project(pt1,viewCenter,yaw,scale,halfW,halfH)
+						local dx,dy=x2-x1,y2-y1; local len=math.sqrt(dx*dx+dy*dy)
+						if len>0.5 then
+							pathIdx+=1; local line=getPathLine(pathIdx)
+							line.BackgroundColor3=pCol; line.Size=UDim2.new(0,len,0,pThick)
+							line.Position=UDim2.new(0,(x1+x2)*0.5,0,(y1+y2)*0.5)
+							line.Rotation=math.deg(math.atan2(dy,dx)); line.Visible=true
+							local gl=line:FindFirstChild("Glow")
+							if gl then gl.ImageColor3=pCol; gl.ImageTransparency=Config.glowtransparency end
 						end
 					end
 				end
 			end
 		end
 
-		-- Remove stale or orphaned dots after main loop (safe iteration)
-		for _, name in ipairs(toRemove) do
-			local obj = Dots[name]
-			if obj and obj.Frame then obj.Frame:Destroy() end
-			Dots[name] = nil
-		end
-
-		hidePathFrom(pathIdx + 1)
+		for _,n in ipairs(toRemove) do _destroy(n) end
+		hidePathFrom(pathIdx+1)
 	end
 
-	-- ── Connections ─────────────────────────────────────────────────────────
-
-	-- LMB pan: fixed inversion (negate delta so drag-direction = look-direction)
+	-- ── Connections ──────────────────────────────────────────────────────────
 	table.insert(System.Connections, UIS.InputBegan:Connect(function(input, gp)
 		if gp or not Config.allowpan then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-		local mp = UIS:GetMouseLocation()
-		local ap = Canvas.AbsolutePosition
-		local as = Canvas.AbsoluteSize
+		if input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+		local mp=UIS:GetMouseLocation(); local ap=Canvas.AbsolutePosition; local as=Canvas.AbsoluteSize
 		if mp.X>=ap.X and mp.X<=ap.X+as.X and mp.Y>=ap.Y and mp.Y<=ap.Y+as.Y then
-			panDragging   = true
-			panActive     = true
-			panResetting  = false
-			panLastLMBUp  = math.huge  -- reset countdown while pressed
-			panLastPos    = mp
+			panDragging=true; panActive=true; panLastLMBUp=math.huge; panLastPos=mp
 		end
 	end))
 
 	table.insert(System.Connections, UIS.InputChanged:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+		if input.UserInputType~=Enum.UserInputType.MouseMovement then return end
 		if not panDragging or not Config.allowpan then return end
-		local mp    = UIS:GetMouseLocation()
-		local delta = mp - panLastPos
-		panLastPos  = mp
-
-		local hw = Canvas.AbsoluteSize.X / 2
-		local hh = Canvas.AbsoluteSize.Y / 2
-		if hw <= 0 or hh <= 0 then return end
-		local s = math.min(hw, hh) / math.max(displayZoom, 1)
-		if s <= 0 then return end
-
-		-- FIXED: negate delta so drag-direction = view-shift-direction
-		-- (drag right → see what's to the right / camera-pan convention)
-		local dx = -delta.X / s
-		local dz = -delta.Y / s
-		-- Rotate screen delta into world space matching current radar orientation
-		local worldDelta = CFrame.Angles(0, getCameraYaw(), 0) * Vector3.new(dx, 0, dz)
-		panOffset = panOffset + worldDelta
+		local mp=UIS:GetMouseLocation(); local delta=mp-panLastPos; panLastPos=mp
+		local hw=Canvas.AbsoluteSize.X/2; local hh=Canvas.AbsoluteSize.Y/2
+		if hw<=0 or hh<=0 then return end
+		local s=math.min(hw,hh)/math.max(displayZoom,1); if s<=0 then return end
+		panTarget=panTarget+CFrame.Angles(0,getCameraYaw(),0)*Vector3.new(-delta.X/s,0,-delta.Y/s)
 	end))
 
 	table.insert(System.Connections, UIS.InputEnded:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
 		if not panDragging then return end
-		panDragging  = false
-		panLastLMBUp = tick()  -- start countdown
+		panDragging=false; panLastLMBUp=tick()
 	end))
 
-	-- Scroll-wheel zoom
 	table.insert(System.Connections, UIS.InputChanged:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+		if input.UserInputType~=Enum.UserInputType.MouseWheel then return end
 		if not Config.isinteractivewithscrollwheel then return end
-		local mp = UIS:GetMouseLocation()
-		local ap = Main.AbsolutePosition
-		local as = Main.AbsoluteSize
+		local mp=UIS:GetMouseLocation(); local ap=Main.AbsolutePosition; local as=Main.AbsoluteSize
 		if mp.X>=ap.X and mp.X<=ap.X+as.X and mp.Y>=ap.Y and mp.Y<=ap.Y+as.Y then
-			Config.zoom = math.clamp(Config.zoom - input.Position.Z * 10, 5, 5000)
+			Config.zoom=math.clamp(Config.zoom-input.Position.Z*10,5,5000)
 		end
 	end))
 
-	-- RenderStepped provides dt for smooth animations
 	table.insert(System.Connections, RunService.RenderStepped:Connect(function(dt)
 		System:Update(dt)
 	end))
 
-	-- ── Public API ──────────────────────────────────────────────────────────
+	-- ── Public API ───────────────────────────────────────────────────────────
 	local API = {}
 
-	-- Shallow-merge. All keys including pathfindcooldown, allowpan, etc. apply immediately.
-	function API:SetConfig(t)
-		assert(type(t)=="table","[Radar:SetConfig] expects a table")
-		for k,v in pairs(t) do
-			if Config[k] ~= nil then Config[k] = v end
-		end
-	end
-
-	-- Deep copy of the current configuration.
-	function API:GetConfig()
-		return deepCopy(Config)
-	end
-
-	-- Immediately show or hide the radar.
-	function API:Toggle(bool)
-		Config.enabled = bool; Main.Visible = bool
-	end
-
-	-- Create a named dot.
-	-- data keys: position (Vector3|Vector2), color, dotsize, title, font, titlesize,
-	--            renderpath, pathcolor, paththickness,
-	--            pulsate, shape ("circle"|"square"|"diamond"), showdistance
+	-- Add any object type. data.type = "Dot"|"Text"|"Image"|"Bounds"
 	function API:Add(name, data)
 		assert(type(name)=="string","[Radar:Add] name must be a string")
 		assert(type(data)=="table", "[Radar:Add] data must be a table")
-		if Dots[name] then
-			warn("[Radar:Add] '"..name.."' already exists — use :Edit() to change it")
-			return
+		if Markers[name] then warn("[Radar:Add] '"..name.."' already exists"); return end
+		spawnMarker(name, data)
+		return makeObject(name)
+	end
+
+	function API:SetConfig(t)
+		assert(type(t)=="table","[Radar:SetConfig] expects a table")
+		for k,v in pairs(t) do if Config[k]~=nil then Config[k]=v end end
+	end
+
+	function API:GetConfig() return deepCopy(Config) end
+
+	function API:SetTitle(text)
+		RadarTitle=tostring(text); TitleLabel.Text="▸  "..RadarTitle
+	end
+
+	-- FocusOn: accepts Vector3, object name string, or object reference.
+	-- config: { loop = bool }
+	function API:FocusOn(target, cfg)
+		local loop=(cfg and (cfg.loop or cfg.looped)) or false
+		focusNameTrack=nil; focusPoint=nil; focusLoop=false
+
+		if typeof(target)=="Vector3" then
+			focusPoint=target; focusLoop=loop
+			focusEndTime=loop and math.huge or (tick()+PAN_TIMEOUT)
+
+		elseif type(target)=="string" then
+			if loop then
+				focusNameTrack=target  -- tracked live each frame
+			else
+				local m=Markers[target]
+				if m and m.data.position then
+					focusPoint=toVec3(m.data.position,0); focusEndTime=tick()+PAN_TIMEOUT
+				end
+			end
+
+		elseif type(target)=="table" and target._name then
+			if loop then
+				focusNameTrack=target._name
+			else
+				local m=Markers[target._name]
+				if m and m.data.position then
+					focusPoint=toVec3(m.data.position,0); focusEndTime=tick()+PAN_TIMEOUT
+				end
+			end
 		end
-		Dots[name] = spawnDot(name, data)
 	end
 
-	local function _edit(name, data)
-		assert(type(name)=="string","[Radar:Edit] name must be a string")
-		assert(type(data)=="table", "[Radar:Edit] data must be a table")
-		local obj = Dots[name]
-		if not obj then
-			warn("[Radar:Edit] '"..name.."' does not exist — use :Add() first")
-			return
-		end
-		local posChanged = applyData(obj, data)
-		-- Reset path timer so the next scheduling window triggers a fresh compute
-		if posChanged or data.renderpath == true then
-			obj._pathTimer = 0
-		end
+	function API:ResetFocus()
+		focusPoint=nil; focusLoop=false; focusNameTrack=nil
 	end
 
-	API.Edit   = _edit
-	API.Update = _edit  -- alias
-
-	function API:Exists(name)
-		return Dots[name] ~= nil
-	end
-
-	function API:Remove(name)
-		assert(type(name)=="string","[Radar:Remove] name must be a string")
-		local obj = Dots[name]
-		if obj and obj.Frame then obj.Frame:Destroy() end
-		Dots[name] = nil
-	end
-
-	function API:Clear()
-		for _, obj in pairs(Dots) do
-			if obj and obj.Frame then obj.Frame:Destroy() end
-		end
-		Dots = {}
-	end
-
-	function API:GetRadarFrame() return Main end
-	function API:GetName()       return TitleLabel.Text end
-	function API:SetName(text)   TitleLabel.Text = tostring(text) end
-
-	-- Reset the pan view back to the player without waiting for the timeout.
 	function API:ResetPan()
-		panActive    = false
-		panResetting = true
+		panTarget=Vector3.new(0,0,0); panActive=false
 	end
+
+	-- Create or update a tag's properties. color overrides all tagged objects.
+	function API:SetTag(tagName, props)
+		assert(type(tagName)=="string","[Radar:SetTag] tagName must be a string")
+		assert(type(props)=="table",   "[Radar:SetTag] props must be a table")
+		Tags[tagName]=Tags[tagName] or {}
+		for k,v in pairs(props) do Tags[tagName][k]=v end
+	end
+
+	-- Returns a table of all tag names.
+	function API:GetTags()
+		local tagSet={}
+		for n in pairs(Tags) do tagSet[n]=true end
+		for _,m in pairs(Markers) do if m.data.tag then tagSet[m.data.tag]=true end end
+		local out={}
+		for n in pairs(tagSet) do table.insert(out,n) end
+		return out
+	end
+
+	function API:GetSelf() return Main end
 
 	function API:Destroy()
-		for _, c in ipairs(System.Connections) do c:Disconnect() end
-		System.Connections = {}
+		for _,c in ipairs(System.Connections) do c:Disconnect() end
+		System.Connections={}
 		pcall(function() SelfModules.UI.UnMakeDraggable(TitleBar) end)
-		self:Clear()
+		for n in pairs(Markers) do _destroy(n) end
 		Main:Destroy()
 	end
 
