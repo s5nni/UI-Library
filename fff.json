@@ -1,0 +1,24 @@
+{
+  "custom_fonts": [
+    {
+      "name": "SF Pro Display Regular",
+      "url": "https://githubusercontent.com"
+    },
+    {
+      "name": "SF Pro Display Bold",
+      "url": "https://githubusercontent.com"
+    },
+    {
+      "name": "SF Pro Text Regular",
+      "url": "https://githubusercontent.com"
+    },
+    {
+      "name": "SF Mono Regular",
+      "url": "https://githubusercontent.com"
+    },
+    {
+      "name": "New York Medium Regular",
+      "url": "https://githubusercontent.com"
+    }
+  ]
+}
